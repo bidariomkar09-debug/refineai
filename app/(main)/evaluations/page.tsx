@@ -6,7 +6,6 @@ import type { EvaluationStats } from "@/app/lib/settingsTypes";
 import PageHeader from "@/app/components/shell/PageHeader";
 import StatCard from "@/app/components/shell/StatCard";
 import SkeletonCard from "@/app/components/mobile/SkeletonCard";
-import LoadingState from "@/app/components/shell/LoadingState";
 import EmptyState from "@/app/components/shell/EmptyState";
 
 const EvaluationCharts = dynamic(() => import("@/app/components/evaluations/EvaluationCharts"), {
