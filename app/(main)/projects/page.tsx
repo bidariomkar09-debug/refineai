@@ -6,6 +6,8 @@ import type { ProjectWithStats } from "@/app/lib/settingsTypes";
 import PageHeader from "@/app/components/shell/PageHeader";
 import LoadingState from "@/app/components/shell/LoadingState";
 import EmptyState from "@/app/components/shell/EmptyState";
+import PullToRefresh from "@/app/components/mobile/PullToRefresh";
+import SwipeableRow from "@/app/components/mobile/SwipeableRow";
 
 type SortKey = "date" | "score" | "name";
 type StatusFilter = "all" | "planning" | "building" | "complete" | "paused";
@@ -81,7 +83,8 @@ export default function ProjectsPage() {
   };
 
   return (
-    <div>
+    <PullToRefresh onRefresh={loadProjects}>
+    <div className="overflow-x-hidden">
       <PageHeader
         title="Projects"
         description="All your AI-generated projects in one place."
@@ -89,25 +92,26 @@ export default function ProjectsPage() {
         action={
           <Link
             href="/workspace"
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+            className="block w-full min-h-[44px] rounded-lg bg-indigo-600 px-4 py-2 text-center text-sm font-medium text-white transition hover:bg-indigo-500 sm:w-auto"
           >
             New Project
           </Link>
         }
       />
 
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="mb-6 flex flex-col gap-3">
         <input
           type="search"
           placeholder="Search projects..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 rounded-lg border border-white/10 bg-[#16161f] px-4 py-2 text-sm text-white placeholder:text-gray-500 focus:border-indigo-500 focus:outline-none"
+          className="min-h-[44px] flex-1 rounded-lg border border-white/10 bg-[#16161f] px-4 py-2 text-base text-white placeholder:text-gray-500 focus:border-indigo-500 focus:outline-none"
         />
+        <div className="flex flex-col gap-3 sm:flex-row">
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-          className="rounded-lg border border-white/10 bg-[#16161f] px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+          className="min-h-[44px] flex-1 rounded-lg border border-white/10 bg-[#16161f] px-3 py-2 text-base text-white focus:border-indigo-500 focus:outline-none"
         >
           <option value="all">All statuses</option>
           <option value="planning">Planning</option>
@@ -118,12 +122,13 @@ export default function ProjectsPage() {
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortKey)}
-          className="rounded-lg border border-white/10 bg-[#16161f] px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+          className="min-h-[44px] flex-1 rounded-lg border border-white/10 bg-[#16161f] px-3 py-2 text-base text-white focus:border-indigo-500 focus:outline-none"
         >
           <option value="date">Sort by date</option>
           <option value="score">Sort by score</option>
           <option value="name">Sort by name</option>
         </select>
+        </div>
       </div>
 
       {loading ? (
@@ -148,10 +153,10 @@ export default function ProjectsPage() {
           }
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((p) => (
+            <SwipeableRow key={p.id} onDelete={() => handleDelete(p.id, p.name)}>
             <article
-              key={p.id}
               className="flex flex-col rounded-xl border border-white/10 bg-[#16161f] p-5 transition hover:border-indigo-500/30"
             >
               <div className="flex items-start justify-between gap-2">
@@ -180,7 +185,7 @@ export default function ProjectsPage() {
               <div className="mt-auto flex gap-2 pt-4">
                 <Link
                   href={`/workspace?projectId=${p.id}`}
-                  className="flex-1 rounded-lg bg-indigo-600 py-2 text-center text-sm font-medium text-white hover:bg-indigo-500"
+                  className="min-h-[44px] flex-1 rounded-lg bg-indigo-600 py-2 text-center text-sm font-medium leading-[44px] text-white hover:bg-indigo-500 sm:leading-normal"
                 >
                   Open
                 </Link>
@@ -188,15 +193,17 @@ export default function ProjectsPage() {
                   type="button"
                   disabled={deletingId === p.id}
                   onClick={() => handleDelete(p.id, p.name)}
-                  className="rounded-lg border border-red-500/30 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                  className="min-h-[44px] rounded-lg border border-red-500/30 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50 md:hidden"
                 >
                   Delete
                 </button>
               </div>
             </article>
+            </SwipeableRow>
           ))}
         </div>
       )}
     </div>
+    </PullToRefresh>
   );
 }

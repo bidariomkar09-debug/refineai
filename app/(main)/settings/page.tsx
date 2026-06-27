@@ -94,7 +94,7 @@ export default function SettingsPage() {
   if (loading) return <LoadingState />;
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-2xl overflow-x-hidden pb-24 md:pb-0">
       <PageHeader
         title="Settings"
         description="Configure your RefineAI workspace."
@@ -242,7 +242,7 @@ export default function SettingsPage() {
           type="button"
           disabled={saving}
           onClick={handleSave}
-          className="w-full rounded-lg bg-indigo-600 py-3 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50 sm:w-auto sm:px-8"
+          className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 w-full min-h-[44px] rounded-lg bg-indigo-600 py-3 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50 md:static sm:w-auto sm:px-8"
         >
           {saving ? "Saving..." : "Save Settings"}
         </button>

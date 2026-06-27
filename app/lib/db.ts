@@ -255,7 +255,12 @@ export async function getUserSettings(): Promise<UserSettings> {
     .select("*")
     .eq("id", "default")
     .single();
-  if (error?.message?.includes("does not exist") || error?.code === "PGRST116") {
+  if (
+    error?.message?.includes("does not exist") ||
+    error?.message?.includes("Could not find the table") ||
+    error?.code === "PGRST116" ||
+    error?.code === "PGRST205"
+  ) {
     return DEFAULT_SETTINGS;
   }
   if (error) throw new DbError(error.message);
@@ -270,6 +275,12 @@ export async function upsertUserSettings(
     .upsert({ id: "default", ...partial, updated_at: new Date().toISOString() })
     .select()
     .single();
+  if (
+    error?.message?.includes("Could not find the table") ||
+    error?.code === "PGRST205"
+  ) {
+    return { ...DEFAULT_SETTINGS, ...partial, updated_at: new Date().toISOString() };
+  }
   if (error) throw new DbError(error.message);
   return data as UserSettings;
 }

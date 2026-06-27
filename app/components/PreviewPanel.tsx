@@ -79,19 +79,19 @@ export default function PreviewPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-surface-border bg-surface-raised/80 px-4 py-2.5">
+      <div className="sticky top-0 z-10 flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-surface-border bg-surface-raised/95 px-4 py-2.5 backdrop-blur md:bg-surface-raised/80">
         <div className="flex items-center gap-2 text-xs">
           <StatusDot status={status} />
           <span className="text-gray-300">{statusLabel(status)}</span>
           {formattedTime && (
-            <span className="text-gray-600">· Updated {formattedTime}</span>
+            <span className="hidden text-gray-600 sm:inline">· Updated {formattedTime}</span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => handleViewport("desktop")}
-            className={`rounded px-2 py-1 text-[10px] ${
+            className={`touch-target min-h-[44px] rounded px-3 py-2 text-[10px] sm:text-xs ${
               localViewport === "desktop"
                 ? "bg-accent/20 text-accent"
                 : "text-gray-500 hover:text-gray-300"
@@ -102,7 +102,7 @@ export default function PreviewPanel({
           <button
             type="button"
             onClick={() => handleViewport("mobile")}
-            className={`rounded px-2 py-1 text-[10px] ${
+            className={`touch-target min-h-[44px] rounded px-3 py-2 text-[10px] sm:text-xs ${
               localViewport === "mobile"
                 ? "bg-accent/20 text-accent"
                 : "text-gray-500 hover:text-gray-300"
@@ -114,7 +114,7 @@ export default function PreviewPanel({
             type="button"
             onClick={onRefresh}
             disabled={status !== "running"}
-            className="rounded-lg border border-surface-border px-2.5 py-1 text-[10px] text-gray-300 hover:text-white disabled:opacity-40"
+            className="touch-target min-h-[44px] rounded-lg border border-surface-border px-3 py-2 text-[10px] text-gray-300 hover:text-white disabled:opacity-40 sm:text-xs"
           >
             Refresh
           </button>
@@ -122,7 +122,7 @@ export default function PreviewPanel({
             href={PREVIEW_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className={`rounded-lg border border-surface-border px-2.5 py-1 text-[10px] text-gray-300 hover:text-white ${
+            className={`touch-target flex min-h-[44px] items-center rounded-lg border border-surface-border px-3 py-2 text-[10px] text-gray-300 hover:text-white sm:text-xs ${
               status !== "running" ? "pointer-events-none opacity-40" : ""
             }`}
           >
@@ -131,7 +131,7 @@ export default function PreviewPanel({
         </div>
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-[#1a1a1a] p-4">
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-[#1a1a1a] p-2 md:p-4">
         {(status === "installing" || status === "starting") && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-surface/90">
             <div className="mb-3 h-8 w-8 motion-safe:animate-spin rounded-full border-2 border-accent border-t-transparent" />
@@ -167,6 +167,7 @@ export default function PreviewPanel({
             className={`mx-auto h-full overflow-hidden rounded-lg border border-surface-border bg-white ${
               localViewport === "mobile" ? "max-w-[375px]" : "w-full"
             }`}
+            style={{ touchAction: "pinch-zoom" }}
           >
             <iframe
               key={iframeKey}

@@ -55,7 +55,7 @@ export default function ModelsPage() {
   if (loading) return <LoadingState />;
 
   return (
-    <div>
+    <div className="overflow-x-hidden">
       <PageHeader
         title="AI Models"
         description="Choose the model that powers your builds."

@@ -47,6 +47,7 @@ function PanelContent({
   );
 }
 
+export { PanelContent as ChatPanelContent };
 export default function ChatPanel(props: ChatPanelProps) {
   const {
     isOpen,
@@ -132,7 +133,7 @@ export function ChatPanelToggle({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-2 rounded-lg border border-surface-border bg-surface-raised px-3 py-2 text-sm text-gray-300 transition hover:border-gray-600 hover:text-white lg:hidden"
+      className="touch-target touch-press hidden items-center gap-2 rounded-lg border border-surface-border bg-surface-raised px-3 py-2 text-sm text-gray-300 transition hover:border-gray-600 hover:text-white md:flex lg:hidden"
       aria-label="Open chat"
     >
       Chat

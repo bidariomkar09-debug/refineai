@@ -1,29 +1,24 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import type { EvaluationStats } from "@/app/lib/settingsTypes";
 import PageHeader from "@/app/components/shell/PageHeader";
 import StatCard from "@/app/components/shell/StatCard";
+import SkeletonCard from "@/app/components/mobile/SkeletonCard";
 import LoadingState from "@/app/components/shell/LoadingState";
 import EmptyState from "@/app/components/shell/EmptyState";
 
-const chartTooltipStyle = {
-  backgroundColor: "#16161f",
-  border: "1px solid rgba(255,255,255,0.1)",
-  borderRadius: "8px",
-  color: "#fff",
-};
+const EvaluationCharts = dynamic(() => import("@/app/components/evaluations/EvaluationCharts"), {
+  ssr: false,
+  loading: () => (
+    <div className="grid gap-6 lg:grid-cols-2">
+      {Array.from({ length: 2 }).map((_, i) => (
+        <div key={i} className="h-64 animate-pulse rounded-xl border border-white/10 bg-[#16161f]" />
+      ))}
+    </div>
+  ),
+});
 
 export default function EvaluationsPage() {
   const [stats, setStats] = useState<EvaluationStats | null>(null);
@@ -51,7 +46,19 @@ export default function EvaluationsPage() {
       ? (stats.totalRounds / stats.totalFilesBuilt).toFixed(1)
       : "—";
 
-  if (loading) return <LoadingState />;
+  if (loading) {
+    return (
+      <div>
+        <div className="mb-6 h-8 w-40 animate-pulse rounded bg-white/10" />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   if (!stats) {
     return <EmptyState title="Could not load evaluations" />;
   }
@@ -59,14 +66,14 @@ export default function EvaluationsPage() {
   const hasData = stats.projectScores.length > 0 || stats.totalRounds > 0;
 
   return (
-    <div>
+    <div className="overflow-x-hidden">
       <PageHeader
         title="Evaluations"
         description="Quality analytics across all your projects."
         crumbs={[{ label: "RefineAI", href: "/dashboard" }, { label: "Evaluations" }]}
       />
 
-      <div className="mb-8 grid gap-4 sm:grid-cols-3">
+      <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-3">
         <StatCard label="Total Rounds" value={stats.totalRounds} />
         <StatCard label="Files Built" value={stats.totalFilesBuilt} />
         <StatCard label="Rounds / File" value={roundsRatio} />
@@ -78,56 +85,9 @@ export default function EvaluationsPage() {
           description="Build a project to see quality analytics here."
         />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <section className="rounded-xl border border-white/10 bg-[#16161f] p-5">
-            <h2 className="mb-4 text-sm font-medium text-gray-300">Average Score per Project</h2>
-            {stats.projectScores.length > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={stats.projectScores}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
-                  <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 11 }} />
-                  <YAxis domain={[0, 100]} tick={{ fill: "#9ca3af", fontSize: 11 }} />
-                  <Tooltip contentStyle={chartTooltipStyle} />
-                  <Bar dataKey="score" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-sm text-gray-500">No project scores yet.</p>
-            )}
-          </section>
-
-          <section className="rounded-xl border border-white/10 bg-[#16161f] p-5">
-            <h2 className="mb-4 text-sm font-medium text-gray-300">Score by Refinement Round</h2>
-            {stats.roundScores.length > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={stats.roundScores}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
-                  <XAxis dataKey="round" tick={{ fill: "#9ca3af", fontSize: 11 }} />
-                  <YAxis domain={[0, 100]} tick={{ fill: "#9ca3af", fontSize: 11 }} />
-                  <Tooltip contentStyle={chartTooltipStyle} />
-                  <Line type="monotone" dataKey="score" stroke="#6366f1" strokeWidth={2} dot={{ fill: "#6366f1" }} />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-sm text-gray-500">No round data yet.</p>
-            )}
-          </section>
-
-          <section className="rounded-xl border border-white/10 bg-[#16161f] p-5">
-            <h2 className="mb-4 text-sm font-medium text-gray-300">Common Issues in Critiques</h2>
-            <ul className="space-y-2">
-              {stats.commonIssues.map((issue) => (
-                <li
-                  key={issue}
-                  className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-sm text-gray-300"
-                >
-                  {issue}
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section className="rounded-xl border border-white/10 bg-[#16161f] p-5">
+        <>
+          <EvaluationCharts stats={stats} />
+          <section className="mt-6 rounded-xl border border-white/10 bg-[#16161f] p-5">
             <h2 className="mb-4 text-sm font-medium text-gray-300">File Type Performance</h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -160,7 +120,7 @@ export default function EvaluationsPage() {
               </div>
             </div>
           </section>
-        </div>
+        </>
       )}
     </div>
   );

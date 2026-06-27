@@ -25,14 +25,27 @@ const config: Config = {
           600: "#4f46e5",
         },
       },
+      spacing: {
+        "nav-h": "4rem",
+      },
       animation: {
         pulse: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "fade-in": "fade-in 0.4s ease-out forwards",
+        "slide-up": "slide-up 0.35s cubic-bezier(0.32, 0.72, 0, 1) forwards",
+        "slide-in-right": "slide-in-right 0.35s cubic-bezier(0.32, 0.72, 0, 1) forwards",
       },
       keyframes: {
         "fade-in": {
           from: { opacity: "0", transform: "translateY(6px)" },
           to: { opacity: "1", transform: "translateY(0)" },
+        },
+        "slide-up": {
+          from: { opacity: "0", transform: "translateY(100%)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        "slide-in-right": {
+          from: { transform: "translateX(-100%)" },
+          to: { transform: "translateX(0)" },
         },
       },
     },

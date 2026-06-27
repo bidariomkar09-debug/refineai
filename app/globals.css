@@ -4,11 +4,11 @@
 
 @layer base {
   html {
-    @apply antialiased;
+    @apply antialiased overflow-x-hidden;
   }
 
   body {
-    @apply bg-surface text-gray-100 min-h-screen;
+    @apply bg-surface text-gray-100 min-h-screen overflow-x-hidden;
   }
 
   html.light body {
@@ -29,6 +29,61 @@
 }
 
 @layer utilities {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .bottom-nav-offset {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .input-above-nav {
+    bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + var(--keyboard-offset, 0px));
+  }
+
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  @media (hover: none) {
+    .touch-press:active {
+      transform: scale(0.97);
+      opacity: 0.85;
+    }
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    background: #6366f1;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    background: #6366f1;
+    border: none;
+    cursor: pointer;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .motion-safe\:animate-pulse {
       animation: none;

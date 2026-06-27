@@ -1,12 +1,13 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 type CodeBlockProps = {
   code: string;
   language?: string;
   maxHeight?: string;
+  mobile?: boolean;
 };
 
 const PrismHighlighter = dynamic(
@@ -73,6 +74,7 @@ export default function CodeBlock({
   code,
   language,
   maxHeight = "400px",
+  mobile = false,
 }: CodeBlockProps) {
   const lang = language ?? "typescript";
   const displayCode = code || "// Waiting for code...";
@@ -81,6 +83,17 @@ export default function CodeBlock({
     null
   );
   const [mounted, setMounted] = useState(false);
+  const [zoomed, setZoomed] = useState(false);
+  const [showLineNumbers, setShowLineNumbers] = useState(!mobile);
+  const lastTap = useRef(0);
+
+  const handleDoubleTap = () => {
+    const now = Date.now();
+    if (now - lastTap.current < 300) {
+      setZoomed((z) => !z);
+    }
+    lastTap.current = now;
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -90,12 +103,23 @@ export default function CodeBlock({
   }, []);
 
   const wrapperClass = fullHeight
-    ? "h-full overflow-hidden rounded-lg border border-surface-border"
-    : "overflow-hidden rounded-lg border border-surface-border";
+    ? "h-full overflow-x-auto overflow-y-hidden rounded-lg border border-surface-border"
+    : "overflow-x-auto overflow-hidden rounded-lg border border-surface-border";
+
+  const fontSize = mobile ? (zoomed ? "14px" : "13px") : "12px";
 
   if (!mounted || !style) {
     return (
-      <div className={wrapperClass}>
+      <div className={wrapperClass} onClick={mobile ? handleDoubleTap : undefined}>
+        {mobile && (
+          <button
+            type="button"
+            onClick={() => setShowLineNumbers((v) => !v)}
+            className="touch-target mb-2 rounded px-2 py-1 text-[10px] text-gray-400"
+          >
+            {showLineNumbers ? "Hide lines" : "Show lines"}
+          </button>
+        )}
         <PlainCode
           code={displayCode}
           maxHeight={fullHeight ? "100%" : maxHeight}
@@ -105,7 +129,16 @@ export default function CodeBlock({
   }
 
   return (
-    <div className={wrapperClass}>
+    <div className={wrapperClass} onClick={mobile ? handleDoubleTap : undefined}>
+      {mobile && (
+        <button
+          type="button"
+          onClick={() => setShowLineNumbers((v) => !v)}
+          className="touch-target mb-2 rounded px-2 py-1 text-[10px] text-gray-400"
+        >
+          {showLineNumbers ? "Hide lines" : "Show lines"}
+        </button>
+      )}
       <PrismHighlighter
         language={lang}
         style={style}
@@ -113,10 +146,11 @@ export default function CodeBlock({
           margin: 0,
           maxHeight: fullHeight ? "100%" : maxHeight,
           height: fullHeight ? "100%" : undefined,
-          fontSize: "12px",
+          fontSize,
           background: "#0d1117",
+          overflowX: "auto",
         }}
-        showLineNumbers
+        showLineNumbers={showLineNumbers}
       >
         {displayCode}
       </PrismHighlighter>

@@ -12,6 +12,7 @@ type CodeViewerProps = {
   activeFileId: string | null;
   currentRound: FileRoundEvent | null;
   statusMessage?: string;
+  mobile?: boolean;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -34,6 +35,7 @@ export default function CodeViewer({
   activeFileId,
   currentRound,
   statusMessage,
+  mobile = false,
 }: CodeViewerProps) {
   const [copied, setCopied] = useState(false);
 
@@ -86,7 +88,9 @@ export default function CodeViewer({
             type="button"
             onClick={handleCopy}
             disabled={!displayCode || displayCode.startsWith("// No code")}
-            className="shrink-0 rounded-lg border border-surface-border px-3 py-1 text-xs text-gray-300 transition hover:border-accent hover:text-white disabled:opacity-40"
+            className={`shrink-0 rounded-lg border border-surface-border px-3 py-1 text-xs text-gray-300 transition hover:border-accent hover:text-white disabled:opacity-40 ${
+              mobile ? "touch-target fixed right-4 top-4 z-10 bg-surface-raised" : ""
+            }`}
           >
             {copied ? "Copied" : "Copy"}
           </button>
@@ -150,11 +154,12 @@ export default function CodeViewer({
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden p-3 motion-safe:transition-opacity duration-200">
+      <div className={`min-h-0 flex-1 overflow-hidden p-3 motion-safe:transition-opacity duration-200 ${mobile ? "overflow-x-auto" : ""}`}>
         <CodeBlock
           code={displayCode}
           language={detectLanguage(file.file_path)}
           maxHeight="100%"
+          mobile={mobile}
         />
       </div>
     </div>

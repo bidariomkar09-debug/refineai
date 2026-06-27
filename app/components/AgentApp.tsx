@@ -26,9 +26,20 @@ import {
 } from "@/app/lib/planPresentation";
 import { completionMessage, fileCompleteMessage, USER_MESSAGES } from "@/app/lib/userMessages";
 import type { PreviewLogLine, PreviewStatus } from "@/app/lib/previewTypes";
-import Sidebar, { SidebarToggle } from "./Sidebar";
+import Sidebar, { FilesButton, SidebarContent } from "./Sidebar";
 import CenterPanel, { type CenterTab } from "./CenterPanel";
-import ChatPanel, { ChatPanelToggle } from "./ChatPanel";
+import ChatPanel from "./ChatPanel";
+import ChatMessages from "./ChatMessages";
+import InputBox from "./InputBox";
+import BottomNav from "./mobile/BottomNav";
+import MobileHeader from "./mobile/MobileHeader";
+import SlideDrawer from "./mobile/SlideDrawer";
+import BottomSheet from "./mobile/BottomSheet";
+import CodeViewerModal from "./mobile/CodeViewerModal";
+import CodeViewer from "./CodeViewer";
+import SidebarNav from "./shell/SidebarNav";
+import Link from "next/link";
+import { useVisualViewport, useIsMobile, useIsTablet } from "@/app/lib/useVisualViewport";
 
 let msgCounter = 0;
 function newId() {
@@ -42,6 +53,15 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatPanelOpen, setChatPanelOpen] = useState(false);
   const [chatPanelCollapsed, setChatPanelCollapsed] = useState(false);
+  const [fileSheetOpen, setFileSheetOpen] = useState(false);
+  const [codeModalOpen, setCodeModalOpen] = useState(false);
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false);
+  const [buildSheetOpen, setBuildSheetOpen] = useState(false);
+  const [tabletSidebarExpanded, setTabletSidebarExpanded] = useState(false);
+
+  const isMobile = useIsMobile();
+  const isTablet = useIsTablet();
+  useVisualViewport();
 
   const [projectId, setProjectId] = useState<string | null>(null);
   const [plan, setPlan] = useState<ProjectPlan | null>(null);
@@ -131,6 +151,9 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
         setSelectedFileId(file.id);
         setCenterTab("code");
         setViewerCode("");
+        if (isMobile) setCodeModalOpen(true);
+        setFileSheetOpen(false);
+        setTabletSidebarExpanded(false);
         return;
       }
 
@@ -140,8 +163,11 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
       const isLive =
         file.id === activeFileIdRef.current && file.status === "building";
       setViewerCode(isLive ? currentCode : file.content ?? "");
+      if (isMobile) setCodeModalOpen(true);
+      setFileSheetOpen(false);
+      setTabletSidebarExpanded(false);
     },
-    [currentCode]
+    [currentCode, isMobile]
   );
 
   const handleRunApp = useCallback(async () => {
@@ -688,16 +714,54 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
 
   const isBuilding = phase === "building" || phase === "testing";
 
-  return (
-    <div className="flex h-screen flex-col overflow-hidden">
-      <header className="flex shrink-0 items-center justify-between border-b border-surface-border bg-surface-raised px-4 py-2.5">
-        <div className="flex items-center gap-3">
-          <SidebarToggle onClick={() => setSidebarOpen(true)} />
-          <div className="md:hidden">
-            <h1 className="text-sm font-bold text-white">RefineAI</h1>
-          </div>
-        </div>
+  useEffect(() => {
+    if (isTablet && isBuilding) {
+      setBuildSheetOpen(true);
+    }
+  }, [isTablet, isBuilding]);
 
+  const codeFile = activeFile ?? selectedFile;
+
+  return (
+    <div className="flex h-dvh flex-col overflow-hidden">
+      <MobileHeader
+        showLogo
+        onMenuClick={() => setNavDrawerOpen(true)}
+        rightSlot={
+          <div className="flex items-center gap-2">
+            <FilesButton onClick={() => setFileSheetOpen(true)} />
+            {isBuilding && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => controlsRef.current?.pause()}
+                  className="touch-target rounded-lg border border-surface-border px-3 py-1.5 text-xs text-gray-300 hover:text-white"
+                >
+                  Pause
+                </button>
+                <button
+                  type="button"
+                  onClick={() => controlsRef.current?.skipCurrent()}
+                  className="touch-target rounded-lg border border-surface-border px-3 py-1.5 text-xs text-gray-300 hover:text-white"
+                >
+                  Skip
+                </button>
+              </>
+            )}
+          </div>
+        }
+      />
+
+      <header className="hidden shrink-0 items-center justify-between border-b border-surface-border bg-surface-raised px-4 py-2.5 lg:flex">
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-bold text-white">RefineAI Workspace</h1>
+          <a
+            href="/dashboard"
+            className="text-xs text-gray-400 transition hover:text-indigo-400"
+          >
+            ← Dashboard
+          </a>
+        </div>
         <div className="flex items-center gap-2">
           {isBuilding && (
             <>
@@ -717,56 +781,68 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
               </button>
             </>
           )}
-          <ChatPanelToggle onClick={() => setChatPanelOpen(true)} />
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar
           mergedFiles={mergedFiles}
           selectedFileId={selectedFileId}
           activeFileId={activeFile?.id ?? null}
           isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
+          onClose={() => setTabletSidebarExpanded(false)}
           onNewProject={handleNewProject}
           onSelectFile={handleSelectFile}
+          tabletExpanded={tabletSidebarExpanded}
+          onTabletExpand={() => setTabletSidebarExpanded(true)}
         />
 
-        <CenterPanel
-          centerTab={centerTab}
-          onTabChange={setCenterTab}
-          selectedFile={selectedFile}
-          viewerCode={viewerCode}
-          activeFileId={activeFile?.id ?? null}
-          activeFile={activeFile}
-          currentRound={currentRound}
-          plan={plan}
-          phase={phase}
-          statusMessage={statusMessage}
-          showConfirm={showConfirm}
-          summaryPlan={summaryPlan}
-          files={files}
-          mergedFiles={mergedFiles}
-          onConfirm={handleConfirm}
-          onMakeChanges={handleMakeChanges}
-          onDownload={handleDownload}
-          onRunApp={handleRunApp}
-          isRunDisabled={phase !== "complete" || !projectId}
-          isPreviewRunning={isPreviewStarting || previewStatus === "installing" || previewStatus === "starting"}
-          confirmDisabled={isLoading}
-          isLoading={isLoading}
-          planIntro={planIntro}
-          previewStatus={previewStatus}
-          previewLastUpdated={previewLastUpdated}
-          previewIframeKey={previewIframeKey}
-          previewViewport={previewViewport}
-          previewLogs={previewLogs}
-          terminalOpen={terminalOpen}
-          onToggleTerminal={() => setTerminalOpen((v) => !v)}
-          onPreviewRefresh={handlePreviewRefresh}
-          onPreviewRetry={handlePreviewRetry}
-          onPreviewViewportChange={setPreviewViewport}
-        />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0 lg:pb-0">
+          <CenterPanel
+            centerTab={centerTab}
+            onTabChange={setCenterTab}
+            selectedFile={selectedFile}
+            viewerCode={viewerCode}
+            activeFileId={activeFile?.id ?? null}
+            activeFile={activeFile}
+            currentRound={currentRound}
+            plan={plan}
+            phase={phase}
+            statusMessage={statusMessage}
+            showConfirm={showConfirm}
+            summaryPlan={summaryPlan}
+            files={files}
+            mergedFiles={mergedFiles}
+            onConfirm={handleConfirm}
+            onMakeChanges={handleMakeChanges}
+            onDownload={handleDownload}
+            onRunApp={handleRunApp}
+            isRunDisabled={phase !== "complete" || !projectId}
+            isPreviewRunning={
+              isPreviewStarting ||
+              previewStatus === "installing" ||
+              previewStatus === "starting"
+            }
+            confirmDisabled={isLoading}
+            isLoading={isLoading}
+            planIntro={planIntro}
+            previewStatus={previewStatus}
+            previewLastUpdated={previewLastUpdated}
+            previewIframeKey={previewIframeKey}
+            previewViewport={previewViewport}
+            previewLogs={previewLogs}
+            terminalOpen={terminalOpen}
+            onToggleTerminal={() => setTerminalOpen((v) => !v)}
+            onPreviewRefresh={handlePreviewRefresh}
+            onPreviewRetry={handlePreviewRetry}
+            onPreviewViewportChange={setPreviewViewport}
+            hideCodeOnMobile={isMobile}
+          />
+
+          <div className="min-h-0 max-h-[35vh] shrink-0 overflow-y-auto border-t border-surface-border lg:hidden">
+            <ChatMessages messages={messages} compact />
+          </div>
+        </div>
 
         <ChatPanel
           messages={messages}
@@ -782,6 +858,110 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           onSubmit={handleSubmit}
         />
       </div>
+
+      <div className="pointer-events-none fixed bottom-24 right-4 z-30 hidden md:block lg:hidden">
+        <button
+          type="button"
+          onClick={() => setChatPanelOpen(true)}
+          className="pointer-events-auto touch-target touch-press flex h-12 w-12 items-center justify-center rounded-full bg-accent text-white shadow-lg"
+          aria-label="Open chat"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="fixed inset-x-0 z-40 bottom-[calc(4rem+env(safe-area-inset-bottom,0px)+var(--keyboard-offset,0px))] md:hidden">
+        <InputBox
+          variant="panel"
+          mobile
+          onSubmit={handleSubmit}
+          disabled={
+            isLoading || phase === "complete" || (phase === "planning" && isLoading)
+          }
+          isLoading={isLoading}
+          phase={phase}
+          awaitingChanges={awaitingChanges}
+        />
+      </div>
+
+      <BottomNav />
+
+      <BottomSheet
+        open={fileSheetOpen}
+        onClose={() => setFileSheetOpen(false)}
+        title="Files"
+      >
+        <SidebarContent
+          mergedFiles={mergedFiles}
+          selectedFileId={selectedFileId}
+          activeFileId={activeFile?.id ?? null}
+          onClose={() => setFileSheetOpen(false)}
+          onNewProject={handleNewProject}
+          onSelectFile={handleSelectFile}
+        />
+      </BottomSheet>
+
+      <BottomSheet
+        open={buildSheetOpen && isBuilding}
+        onClose={() => setBuildSheetOpen(false)}
+        title="Building"
+        defaultSnap="half"
+      >
+        {codeFile && (
+          <div className="h-full min-h-[200px]">
+            <CodeViewer
+              file={codeFile}
+              code={viewerCode}
+              activeFileId={activeFile?.id ?? null}
+              currentRound={currentRound}
+              statusMessage={statusMessage}
+            />
+          </div>
+        )}
+      </BottomSheet>
+
+      <CodeViewerModal
+        open={codeModalOpen}
+        onClose={() => setCodeModalOpen(false)}
+        file={codeFile}
+        code={viewerCode}
+        activeFileId={activeFile?.id ?? null}
+        currentRound={currentRound}
+        statusMessage={statusMessage}
+      />
+
+      <SlideDrawer open={navDrawerOpen} onClose={() => setNavDrawerOpen(false)} widthClass="w-64">
+        <div className="flex h-full flex-col">
+          <div className="flex items-center justify-between border-b border-white/10 px-5 py-5">
+          <Link href="/dashboard" className="flex items-center gap-2" onClick={() => setNavDrawerOpen(false)}>
+            <span className="text-2xl font-light text-indigo-500">∞</span>
+            <span className="text-lg font-semibold tracking-tight text-white">
+              Refine<span className="text-indigo-500">AI</span>
+            </span>
+          </Link>
+          <button
+            type="button"
+            className="touch-target rounded-lg p-1.5 text-gray-400"
+            onClick={() => setNavDrawerOpen(false)}
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+        <SidebarNav activePath="/workspace" onNavigate={() => setNavDrawerOpen(false)} />
+        <div className="mt-auto border-t border-white/10 p-4">
+          <Link
+            href="/workspace"
+            onClick={() => setNavDrawerOpen(false)}
+            className="flex min-h-[44px] w-full items-center justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white"
+          >
+            New Project
+          </Link>
+        </div>
+        </div>
+      </SlideDrawer>
     </div>
   );
 }

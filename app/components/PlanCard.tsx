@@ -139,12 +139,12 @@ export default function PlanCard({
       )}
 
       {showActions && onConfirm && onMakeChanges && (
-        <div className="flex flex-wrap gap-3 border-t border-surface-border px-5 py-4">
+        <div className="flex flex-col gap-3 border-t border-surface-border px-5 py-4 sm:flex-row sm:flex-wrap">
           <button
             type="button"
             onClick={onConfirm}
             disabled={confirmDisabled}
-            className="rounded-lg bg-white px-5 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-[44px] w-full rounded-lg bg-white px-5 py-2 text-sm font-medium text-gray-900 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             Build
           </button>
@@ -152,7 +152,7 @@ export default function PlanCard({
             type="button"
             onClick={onMakeChanges}
             disabled={confirmDisabled}
-            className="rounded-lg border border-surface-border px-5 py-2 text-sm font-medium text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-[44px] w-full rounded-lg border border-surface-border px-5 py-2 text-sm font-medium text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             Edit plan
           </button>

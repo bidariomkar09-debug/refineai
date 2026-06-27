@@ -44,6 +44,7 @@ type CenterPanelProps = {
   onPreviewRefresh: () => void;
   onPreviewRetry: () => void;
   onPreviewViewportChange: (v: "desktop" | "mobile") => void;
+  hideCodeOnMobile?: boolean;
 };
 
 function TabButton({
@@ -59,7 +60,7 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
+      className={`relative min-h-[44px] shrink-0 px-4 py-2.5 text-sm font-medium transition-colors ${
         active ? "text-white" : "text-gray-500 hover:text-gray-300"
       }`}
     >
@@ -105,12 +106,13 @@ export default function CenterPanel({
   onPreviewRefresh,
   onPreviewRetry,
   onPreviewViewportChange,
+  hideCodeOnMobile = false,
 }: CenterPanelProps) {
   const codeFile = activeFile ?? selectedFile;
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <div className="flex shrink-0 border-b border-surface-border bg-surface-raised/50 px-2">
+      <div className="flex shrink-0 overflow-x-auto border-b border-surface-border bg-surface-raised/50 px-2">
         <TabButton active={centerTab === "plan"} onClick={() => onTabChange("plan")}>
           Plan
         </TabButton>
@@ -151,16 +153,25 @@ export default function CenterPanel({
 
         <div
           className={`absolute inset-0 motion-safe:transition-opacity duration-200 ${
-            centerTab === "code" ? "opacity-100" : "pointer-events-none opacity-0"
+            centerTab === "code" && !hideCodeOnMobile
+              ? "opacity-100"
+              : "pointer-events-none opacity-0"
           }`}
         >
-          <CodeViewer
-            file={codeFile}
-            code={viewerCode}
-            activeFileId={activeFileId}
-            currentRound={currentRound}
-            statusMessage={statusMessage}
-          />
+          {hideCodeOnMobile && centerTab === "code" ? (
+            <div className="flex h-full flex-col items-center justify-center p-6 text-center">
+              <p className="text-sm text-gray-400">Tap a file in the explorer to view code</p>
+              <p className="mt-1 text-xs text-gray-600">Opens full-screen on mobile</p>
+            </div>
+          ) : (
+            <CodeViewer
+              file={codeFile}
+              code={viewerCode}
+              activeFileId={activeFileId}
+              currentRound={currentRound}
+              statusMessage={statusMessage}
+            />
+          )}
         </div>
 
         <div

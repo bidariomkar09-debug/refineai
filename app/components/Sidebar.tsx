@@ -11,16 +11,18 @@ type SidebarProps = {
   onClose: () => void;
   onNewProject: () => void;
   onSelectFile: (file: ExplorerFile) => void;
+  tabletExpanded?: boolean;
+  onTabletExpand?: () => void;
 };
 
-function SidebarContent({
+export function SidebarContent({
   mergedFiles,
   selectedFileId,
   activeFileId,
   onClose,
   onNewProject,
   onSelectFile,
-}: Omit<SidebarProps, "isOpen">) {
+}: Omit<SidebarProps, "isOpen" | "tabletExpanded" | "onTabletExpand">) {
   return (
     <div className="flex h-full flex-col">
       <div className="shrink-0 border-b border-surface-border px-3 py-3">
@@ -32,7 +34,7 @@ function SidebarContent({
             onNewProject();
             onClose();
           }}
-          className="w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-600"
+          className="min-h-[44px] w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-600"
         >
           + New Project
         </button>
@@ -58,56 +60,81 @@ function SidebarContent({
 }
 
 export default function Sidebar(props: SidebarProps) {
-  const { isOpen, onClose, ...contentProps } = props;
+  const { isOpen, onClose, tabletExpanded, onTabletExpand, ...contentProps } = props;
 
   return (
     <>
-      <aside className="hidden h-full w-72 shrink-0 border-r border-surface-border bg-surface-raised md:flex md:flex-col">
+      {/* Desktop lg+ full sidebar */}
+      <aside className="hidden h-full w-72 shrink-0 border-r border-surface-border bg-surface-raised lg:flex lg:flex-col">
         <SidebarContent {...contentProps} onClose={onClose} />
       </aside>
 
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/60 md:hidden"
-          onClick={onClose}
-          aria-hidden="true"
-        />
-      )}
+      {/* Tablet md–lg icon rail */}
+      <aside className="hidden h-full w-[60px] shrink-0 flex-col items-center border-r border-surface-border bg-surface-raised py-3 md:flex lg:hidden">
+        <button
+          type="button"
+          onClick={onTabletExpand}
+          className="touch-target touch-press mb-3 rounded-lg p-2 text-accent hover:bg-surface-border"
+          aria-label="Expand file explorer"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V6A2.25 2.25 0 014.5 3.75h4.318a2.25 2.25 0 011.591.659l1.182 1.182A2.25 2.25 0 0015.318 6H19.5A2.25 2.25 0 0121.75 8.25v9.5A2.25 2.25 0 0119.5 20.25H4.5A2.25 2.25 0 012.25 18V12.75z" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            contentProps.onNewProject();
+          }}
+          className="touch-target touch-press rounded-lg p-2 text-accent hover:bg-surface-border"
+          aria-label="New project"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+        </button>
+      </aside>
 
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 w-80 transform border-r border-surface-border bg-surface-raised transition-transform duration-300 md:hidden ${
-          isOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="flex items-center justify-between border-b border-surface-border px-4 py-3 md:hidden">
-          <span className="text-sm font-semibold text-white">RefineAI</span>
-          <button
-            type="button"
+      {/* Tablet expanded overlay */}
+      {tabletExpanded && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/60 md:block lg:hidden"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-gray-400 hover:bg-surface-border hover:text-white"
-            aria-label="Close sidebar"
-          >
-            ✕
-          </button>
-        </div>
-        <SidebarContent {...contentProps} onClose={onClose} />
-      </aside>
+            aria-hidden="true"
+          />
+          <aside className="fixed inset-y-0 left-0 z-50 w-72 border-r border-surface-border bg-surface-raised md:block lg:hidden">
+            <div className="flex items-center justify-between border-b border-surface-border px-4 py-3">
+              <span className="text-sm font-semibold text-white">Files</span>
+              <button
+                type="button"
+                onClick={onClose}
+                className="touch-target rounded-lg p-1.5 text-gray-400 hover:bg-surface-border hover:text-white"
+                aria-label="Close sidebar"
+              >
+                ✕
+              </button>
+            </div>
+            <SidebarContent {...contentProps} onClose={onClose} />
+          </aside>
+        </>
+      )}
     </>
   );
 }
 
-export function SidebarToggle({ onClick }: { onClick: () => void }) {
+export function FilesButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-2 rounded-lg border border-surface-border bg-surface-raised px-3 py-2 text-sm text-gray-300 transition hover:border-gray-600 hover:text-white md:hidden"
-      aria-label="Open sidebar"
+      className="touch-target touch-press flex items-center gap-2 rounded-lg border border-surface-border bg-surface-raised px-3 py-2 text-sm text-gray-300 transition hover:border-gray-600 hover:text-white md:hidden"
+      aria-label="Open files"
     >
-      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V6A2.25 2.25 0 014.5 3.75h4.318a2.25 2.25 0 011.591.659l1.182 1.182A2.25 2.25 0 0015.318 6H19.5A2.25 2.25 0 0121.75 8.25v9.5A2.25 2.25 0 0119.5 20.25H4.5A2.25 2.25 0 012.25 18V12.75z" />
       </svg>
-      Menu
+      Files
     </button>
   );
 }

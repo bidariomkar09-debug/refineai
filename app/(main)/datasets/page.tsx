@@ -48,7 +48,7 @@ export default function DatasetsPage() {
   };
 
   return (
-    <div>
+    <div className="overflow-x-hidden">
       <PageHeader
         title="Datasets"
         description="Browse all generated code files across your projects."

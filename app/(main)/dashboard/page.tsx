@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import type { DashboardStats } from "@/app/lib/settingsTypes";
 import PageHeader from "@/app/components/shell/PageHeader";
 import StatCard from "@/app/components/shell/StatCard";
-import LoadingState from "@/app/components/shell/LoadingState";
+import SkeletonCard from "@/app/components/mobile/SkeletonCard";
 import EmptyState from "@/app/components/shell/EmptyState";
 
 function formatStatus(status: string) {
@@ -43,7 +43,18 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <LoadingState message="Loading dashboard..." />;
+  if (loading) {
+    return (
+      <div>
+        <div className="mb-6 h-8 w-48 animate-pulse rounded bg-white/10" />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      </div>
+    );
+  }
   if (error || !stats) {
     return (
       <EmptyState
@@ -54,7 +65,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div>
+    <div className="overflow-x-hidden">
       <PageHeader
         title={`Welcome back, ${accountName}`}
         description="Here's what's happening with your AI builds."
@@ -62,14 +73,14 @@ export default function DashboardPage() {
         action={
           <Link
             href="/workspace"
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+            className="block w-full min-h-[44px] rounded-lg bg-indigo-600 px-4 py-2 text-center text-sm font-medium leading-[44px] text-white transition hover:bg-indigo-500 sm:inline-block sm:w-auto sm:leading-normal"
           >
             Start New Project
           </Link>
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total Projects" value={stats.totalProjects} />
         <StatCard label="Files Generated" value={stats.totalFiles} />
         <StatCard
@@ -90,9 +101,9 @@ export default function DashboardPage() {
               {stats.recentProjects.map((p) => (
                 <li
                   key={p.id}
-                  className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-4 py-3"
+                  className="flex min-h-[44px] items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-4 py-3"
                 >
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="font-medium text-white">{p.name}</p>
                     <p className="text-xs text-gray-500">
                       {formatStatus(p.status)} · {p.fileCount} files ·{" "}
@@ -101,7 +112,7 @@ export default function DashboardPage() {
                   </div>
                   <Link
                     href={`/workspace?projectId=${p.id}`}
-                    className="text-sm text-indigo-400 hover:text-indigo-300"
+                    className="touch-target shrink-0 px-3 py-2 text-sm text-indigo-400 hover:text-indigo-300"
                   >
                     Open
                   </Link>
