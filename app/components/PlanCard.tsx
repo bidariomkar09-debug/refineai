@@ -1,12 +1,28 @@
 "use client";
 
-import type { ProjectPlan } from "@/app/lib/agentTypes";
+import type { FileStatus, ProjectPlan } from "@/app/lib/agentTypes";
+import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 
 type PlanCardProps = {
   plan: ProjectPlan;
+  liveFiles?: ExplorerFile[];
 };
 
-export default function PlanCard({ plan }: PlanCardProps) {
+function statusDot(status: FileStatus, score: number) {
+  if (status === "building") return "bg-accent motion-safe:animate-pulse";
+  if (status === "done" && score >= 90) return "bg-accent-green";
+  if (status === "error") return "bg-red-400";
+  if (status === "skipped") return "bg-gray-600";
+  return "bg-gray-500";
+}
+
+function getLiveStatus(path: string, liveFiles?: ExplorerFile[]): ExplorerFile | undefined {
+  if (!liveFiles) return undefined;
+  const normalized = path.replace(/\\/g, "/");
+  return liveFiles.find((f) => f.file_path.replace(/\\/g, "/") === normalized);
+}
+
+export default function PlanCard({ plan, liveFiles }: PlanCardProps) {
   return (
     <div className="space-y-4 text-sm">
       <div>
@@ -46,18 +62,38 @@ export default function PlanCard({ plan }: PlanCardProps) {
           Files to Build
         </p>
         <ul className="space-y-1">
-          {plan.files.map((f) => (
-            <li
-              key={f.path}
-              className="flex items-start gap-2 rounded-lg bg-surface/50 px-3 py-2 text-xs"
-            >
-              <span className="text-gray-500">⏳</span>
-              <div>
-                <span className="font-mono text-gray-300">{f.path}</span>
-                <p className="text-gray-500">{f.purpose}</p>
-              </div>
-            </li>
-          ))}
+          {plan.files.map((f) => {
+            const live = getLiveStatus(f.path, liveFiles);
+            const status = live?.status ?? "pending";
+            const score = live?.score ?? 0;
+            return (
+              <li
+                key={f.path}
+                className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${
+                  status === "building"
+                    ? "border border-accent/20 bg-accent/5"
+                    : status === "done"
+                      ? "bg-accent-green/5"
+                      : "bg-surface/50"
+                }`}
+              >
+                <span
+                  className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${statusDot(status, score)}`}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate font-mono text-gray-300">{f.path}</span>
+                    {live && live.score > 0 && (
+                      <span className="shrink-0 font-semibold text-accent-green">
+                        {live.score}%
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-gray-500">{f.purpose}</p>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </div>
 

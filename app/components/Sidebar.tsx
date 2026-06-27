@@ -1,19 +1,21 @@
 "use client";
 
-import type { DbFile, DbProject } from "@/app/lib/agentTypes";
+import type { DbProject } from "@/app/lib/agentTypes";
+import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import FileExplorer from "./FileExplorer";
 
 type SidebarProps = {
   projects: DbProject[];
   activeProjectId: string | null;
-  files: DbFile[];
+  mergedFiles: ExplorerFile[];
   selectedFileId: string | null;
+  activeFileId: string | null;
   isLoading: boolean;
   isOpen: boolean;
   onClose: () => void;
   onSelectProject: (project: DbProject) => void;
   onNewProject: () => void;
-  onSelectFile: (file: DbFile) => void;
+  onSelectFile: (file: ExplorerFile) => void;
 };
 
 const STATUS_BADGE: Record<string, string> = {
@@ -34,8 +36,9 @@ function formatDate(iso: string): string {
 function SidebarContent({
   projects,
   activeProjectId,
-  files,
+  mergedFiles,
   selectedFileId,
+  activeFileId,
   isLoading,
   onClose,
   onSelectProject,
@@ -69,8 +72,9 @@ function SidebarContent({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-1">
           <FileExplorer
-            files={files}
+            files={mergedFiles}
             selectedFileId={selectedFileId}
+            activeFileId={activeFileId}
             onSelectFile={onSelectFile}
           />
         </div>

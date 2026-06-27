@@ -8,11 +8,13 @@ import type {
   FileRoundEvent,
   ProjectPlan,
 } from "@/app/lib/agentTypes";
+import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import MessageBubble from "./MessageBubble";
 import PlanCard from "./PlanCard";
 import ConfirmButtons from "./ConfirmButtons";
 import ProgressCard from "./ProgressCard";
 import SummaryCard from "./SummaryCard";
+import BuildChecklist from "./BuildChecklist";
 
 type ChatAreaProps = {
   messages: ChatMessage[];
@@ -23,6 +25,8 @@ type ChatAreaProps = {
   activeProgress: { fileName: string; round: FileRoundEvent | null } | null;
   summaryPlan: ProjectPlan | null;
   files: DbFile[];
+  mergedFiles: ExplorerFile[];
+  activeFileId: string | null;
   onConfirm: () => void;
   onMakeChanges: () => void;
   onDownload: () => void;
@@ -39,6 +43,8 @@ export default function ChatArea({
   activeProgress,
   summaryPlan,
   files,
+  mergedFiles,
+  activeFileId,
   onConfirm,
   onMakeChanges,
   onDownload,
@@ -46,12 +52,12 @@ export default function ChatArea({
   isLoading,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const isBuilding = phase === "building" || phase === "testing";
+  const displayPlan = summaryPlan ?? plan;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, statusMessage, activeProgress, phase]);
-
-  const displayPlan = summaryPlan ?? plan;
+  }, [messages.length, statusMessage, activeProgress, phase, mergedFiles]);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -85,14 +91,17 @@ export default function ChatArea({
             {messages.map((msg) => (
               <MessageBubble key={msg.id} role={msg.role} content={msg.content}>
                 {msg.type === "plan" && msg.metadata?.plan ? (
-                  <PlanCard plan={msg.metadata.plan as ProjectPlan} />
+                  <PlanCard
+                    plan={msg.metadata.plan as ProjectPlan}
+                    liveFiles={isBuilding || phase === "complete" ? mergedFiles : undefined}
+                  />
                 ) : null}
               </MessageBubble>
             ))}
 
             {plan && phase === "awaiting_confirm" && !messages.some((m) => m.type === "plan") && (
               <MessageBubble role="assistant" content="">
-                <PlanCard plan={plan} />
+                <PlanCard plan={plan} liveFiles={mergedFiles} />
               </MessageBubble>
             )}
 
@@ -106,14 +115,18 @@ export default function ChatArea({
               </MessageBubble>
             )}
 
-            {(phase === "building" || phase === "testing") && statusMessage && (
-              <div className="flex items-center gap-3 rounded-xl border border-surface-border bg-surface-raised/50 p-4">
-                <div className="h-5 w-5 motion-safe:animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                <span className="text-sm text-gray-300">{statusMessage}</span>
+            {isBuilding && mergedFiles.length > 0 && (
+              <BuildChecklist files={mergedFiles} activeFileId={activeFileId} />
+            )}
+
+            {isBuilding && statusMessage && (
+              <div className="flex items-center gap-3 rounded-xl border border-surface-border bg-surface-raised/50 p-3">
+                <div className="h-4 w-4 motion-safe:animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                <span className="text-xs text-gray-400">{statusMessage}</span>
               </div>
             )}
 
-            {activeProgress && (
+            {activeProgress && isBuilding && (
               <ProgressCard
                 fileName={activeProgress.fileName}
                 round={activeProgress.round}

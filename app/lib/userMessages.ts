@@ -10,6 +10,8 @@ export const USER_MESSAGES = {
   complete: "Your project is ready!",
   paused: "Build paused.",
   changesReceived: "Updating your plan...",
+  fileStarted: (path: string) => `Building ${path}...`,
+  fileComplete: (path: string, score: number) => `Finished ${path} — ${score}%`,
 } as const;
 
 export function getFileStatusMessage(task: "write" | "review" | "refine"): string {

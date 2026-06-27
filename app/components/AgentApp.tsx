@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   BuildPhase,
   ChatMessage,
@@ -11,6 +11,12 @@ import type {
 } from "@/app/lib/agentTypes";
 import { fetchStream } from "@/app/lib/streamClient";
 import { startBuild, type OrchestratorControls } from "@/app/lib/buildOrchestrator";
+import {
+  mergeProjectFiles,
+  syncFileIntoList,
+  updateFileInList,
+  type ExplorerFile,
+} from "@/app/lib/mergeProjectFiles";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
 import Sidebar, { SidebarToggle, FileBuilderToggle } from "./Sidebar";
 import CenterPanel, { type CenterTab } from "./CenterPanel";
@@ -56,7 +62,22 @@ export default function AgentApp() {
   const controlsRef = useRef<OrchestratorControls | null>(null);
   const activeFileIdRef = useRef<string | null>(null);
 
-  const selectedFile = files.find((f) => f.id === selectedFileId) ?? null;
+  const mergedFiles = useMemo(
+    () => mergeProjectFiles(plan, files, projectId),
+    [plan, files, projectId]
+  );
+
+  const selectedFile =
+    mergedFiles.find((f) => f.id === selectedFileId) ??
+    files.find((f) => f.id === selectedFileId) ??
+    null;
+
+  const appendBuildMessage = useCallback((content: string) => {
+    setMessages((prev) => [
+      ...prev,
+      { id: newId(), role: "assistant", content, type: "progress" as const },
+    ]);
+  }, []);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -82,7 +103,14 @@ export default function AgentApp() {
   }, []);
 
   const handleSelectFile = useCallback(
-    (file: DbFile) => {
+    (file: ExplorerFile) => {
+      if (file.isVirtual) {
+        setSelectedFileId(file.id);
+        setCenterTab("code");
+        setViewerCode("");
+        return;
+      }
+
       setSelectedFileId(file.id);
       setCenterTab("code");
 
@@ -290,7 +318,9 @@ export default function AgentApp() {
     setPhase("building");
     setFileBuilderOpen(true);
     setFileBuilderMinimized(false);
-    setCenterTab("code");
+    setCenterTab("chat");
+
+    appendBuildMessage(USER_MESSAGES.building);
 
     await fetch("/api/projects", {
       method: "POST",
@@ -313,20 +343,21 @@ export default function AgentApp() {
           setCurrentCode("");
           setViewerCode("");
           setCurrentRound(null);
-          setCenterTab("code");
           setActiveProgress({ fileName: file.file_name, round: null });
           setFiles((prev) =>
-            prev.map((f) =>
-              f.id === file.id ? { ...f, status: "building" as const } : f
-            )
+            syncFileIntoList(prev, { ...file, status: "building" })
           );
+          appendBuildMessage(USER_MESSAGES.fileStarted(file.file_path));
         },
         onRound: (fileId, event) => {
           const round = event.data;
           setCurrentRound(round);
           if (round.code) {
             setCurrentCode(round.code);
-            if (fileId === selectedFileId || fileId === activeFileIdRef.current) {
+            if (
+              fileId === selectedFileId ||
+              fileId === activeFileIdRef.current
+            ) {
               setViewerCode(round.code);
             }
           }
@@ -337,16 +368,17 @@ export default function AgentApp() {
         onFileComplete: (fileId, score) => {
           activeFileIdRef.current = null;
           setFiles((prev) =>
-            prev.map((f) =>
-              f.id === fileId
-                ? { ...f, status: "done" as const, score }
-                : f
-            )
+            updateFileInList(prev, fileId, { status: "done", score })
           );
           refreshFiles(projectId).then((updated) => {
             const completed = updated?.find((f) => f.id === fileId);
-            if (completed && selectedFileId === fileId) {
-              setViewerCode(completed.content ?? "");
+            if (completed) {
+              appendBuildMessage(
+                USER_MESSAGES.fileComplete(completed.file_path, score)
+              );
+              if (selectedFileId === fileId) {
+                setViewerCode(completed.content ?? "");
+              }
             }
           });
         },
@@ -357,6 +389,7 @@ export default function AgentApp() {
           setStatusMessage("");
           setActiveProgress(null);
           setCenterTab("chat");
+          appendBuildMessage(USER_MESSAGES.complete);
           loadProjects();
           refreshFiles(projectId);
         },
@@ -365,7 +398,14 @@ export default function AgentApp() {
     );
 
     setIsLoading(false);
-  }, [projectId, plan, refreshFiles, loadProjects, selectedFileId]);
+  }, [
+    projectId,
+    plan,
+    refreshFiles,
+    loadProjects,
+    selectedFileId,
+    appendBuildMessage,
+  ]);
 
   const handleMakeChanges = useCallback(() => {
     setAwaitingChanges(true);
@@ -422,8 +462,9 @@ export default function AgentApp() {
         <Sidebar
           projects={projects}
           activeProjectId={projectId}
-          files={files}
+          mergedFiles={mergedFiles}
           selectedFileId={selectedFileId}
+          activeFileId={activeFile?.id ?? null}
           isLoading={projectsLoading}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
@@ -447,6 +488,7 @@ export default function AgentApp() {
           activeProgress={activeProgress}
           summaryPlan={summaryPlan}
           files={files}
+          mergedFiles={mergedFiles}
           onConfirm={handleConfirm}
           onMakeChanges={handleMakeChanges}
           onDownload={handleDownload}

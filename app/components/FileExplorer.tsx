@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { DbFile } from "@/app/lib/agentTypes";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import {
   buildFileTree,
   shouldExpandFolder,
@@ -11,12 +11,13 @@ import {
 import FileIcon, { FolderIcon } from "./FileIcon";
 
 type FileExplorerProps = {
-  files: DbFile[];
+  files: ExplorerFile[];
   selectedFileId: string | null;
-  onSelectFile: (file: DbFile) => void;
+  activeFileId: string | null;
+  onSelectFile: (file: ExplorerFile) => void;
 };
 
-function StatusDot({ status, score }: { status: DbFile["status"]; score: number }) {
+function StatusDot({ status, score }: { status: ExplorerFile["status"]; score: number }) {
   if (status === "building") {
     return (
       <span className="relative flex h-2 w-2 shrink-0">
@@ -37,7 +38,7 @@ function StatusDot({ status, score }: { status: DbFile["status"]; score: number 
   return <span className="h-2 w-2 shrink-0 rounded-full bg-gray-500" title="Pending" />;
 }
 
-function fileRowClass(file: DbFile, selected: boolean): string {
+function fileRowClass(file: ExplorerFile, selected: boolean): string {
   const base =
     "group flex w-full items-center gap-1.5 rounded-r-lg py-1 pr-2 text-left text-xs transition-colors duration-150";
 
@@ -66,18 +67,24 @@ function TreeFolder({
   depth,
   files,
   selectedFileId,
+  activeFileId,
   onSelectFile,
   defaultOpen,
 }: {
   node: TreeFolderNode;
   depth: number;
-  files: DbFile[];
+  files: ExplorerFile[];
   selectedFileId: string | null;
-  onSelectFile: (file: DbFile) => void;
+  activeFileId: string | null;
+  onSelectFile: (file: ExplorerFile) => void;
   defaultOpen: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const paddingLeft = 8 + depth * 12;
+
+  useEffect(() => {
+    if (defaultOpen) setOpen(true);
+  }, [defaultOpen]);
 
   if (node.name === "" && node.children.length > 0) {
     return (
@@ -89,6 +96,7 @@ function TreeFolder({
             depth={depth}
             files={files}
             selectedFileId={selectedFileId}
+            activeFileId={activeFileId}
             onSelectFile={onSelectFile}
           />
         ))}
@@ -117,6 +125,7 @@ function TreeFolder({
               depth={depth + 1}
               files={files}
               selectedFileId={selectedFileId}
+              activeFileId={activeFileId}
               onSelectFile={onSelectFile}
             />
           ))}
@@ -144,14 +153,28 @@ function TreeNodeRow({
   depth,
   files,
   selectedFileId,
+  activeFileId,
   onSelectFile,
 }: {
   node: TreeNode;
   depth: number;
-  files: DbFile[];
+  files: ExplorerFile[];
   selectedFileId: string | null;
-  onSelectFile: (file: DbFile) => void;
+  activeFileId: string | null;
+  onSelectFile: (file: ExplorerFile) => void;
 }) {
+  const rowRef = useRef<HTMLButtonElement>(null);
+  const file = node.type === "file" ? (node.file as ExplorerFile) : null;
+  const isActive = file
+    ? activeFileId === file.id || file.status === "building"
+    : false;
+
+  useEffect(() => {
+    if (isActive && rowRef.current) {
+      rowRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [isActive, file?.status]);
+
   if (node.type === "folder") {
     return (
       <TreeFolder
@@ -159,33 +182,34 @@ function TreeNodeRow({
         depth={depth}
         files={files}
         selectedFileId={selectedFileId}
+        activeFileId={activeFileId}
         onSelectFile={onSelectFile}
         defaultOpen={shouldExpandFolder(node, files)}
       />
     );
   }
 
-  const { file } = node;
-  const selected = selectedFileId === file.id;
+  const selected = selectedFileId === file!.id;
   const paddingLeft = 8 + depth * 12 + 16;
 
   return (
     <button
+      ref={rowRef}
       type="button"
-      onClick={() => onSelectFile(file)}
-      className={fileRowClass(file, selected)}
+      onClick={() => onSelectFile(file!)}
+      className={fileRowClass(file!, selected)}
       style={{ paddingLeft }}
     >
-      <FileIcon filePath={file.file_path} />
-      <span className="min-w-0 flex-1 truncate">{file.file_name}</span>
-      <StatusDot status={file.status} score={file.score} />
-      {(file.status === "done" || file.status === "building") && file.score > 0 && (
+      <FileIcon filePath={file!.file_path} />
+      <span className="min-w-0 flex-1 truncate">{file!.file_name}</span>
+      <StatusDot status={file!.status} score={file!.score} />
+      {(file!.status === "done" || file!.status === "building") && file!.score > 0 && (
         <span
           className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums ${
-            file.score >= 90 ? "bg-accent-green/15 text-accent-green" : "bg-gray-700/50 text-gray-400"
+            file!.score >= 90 ? "bg-accent-green/15 text-accent-green" : "bg-gray-700/50 text-gray-400"
           }`}
         >
-          {file.score}%
+          {file!.score}%
         </span>
       )}
     </button>
@@ -195,6 +219,7 @@ function TreeNodeRow({
 export default function FileExplorer({
   files,
   selectedFileId,
+  activeFileId,
   onSelectFile,
 }: FileExplorerProps) {
   const tree = useMemo(() => buildFileTree(files), [files]);
@@ -214,6 +239,7 @@ export default function FileExplorer({
           depth={0}
           files={files}
           selectedFileId={selectedFileId}
+          activeFileId={activeFileId}
           onSelectFile={onSelectFile}
         />
       ))}

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import type { BuildPhase, ChatMessage, DbFile, FileRoundEvent, ProjectPlan } from "@/app/lib/agentTypes";
+import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import ChatArea from "./ChatArea";
 import InputBox from "./InputBox";
 import CodeViewer from "./CodeViewer";
@@ -23,6 +24,7 @@ type CenterPanelProps = {
   activeProgress: { fileName: string; round: FileRoundEvent | null } | null;
   summaryPlan: ProjectPlan | null;
   files: DbFile[];
+  mergedFiles: ExplorerFile[];
   onConfirm: () => void;
   onMakeChanges: () => void;
   onDownload: () => void;
@@ -72,6 +74,7 @@ export default function CenterPanel({
   activeProgress,
   summaryPlan,
   files,
+  mergedFiles,
   onConfirm,
   onMakeChanges,
   onDownload,
@@ -106,6 +109,8 @@ export default function CenterPanel({
             activeProgress={activeProgress}
             summaryPlan={summaryPlan}
             files={files}
+            mergedFiles={mergedFiles}
+            activeFileId={activeFileId}
             onConfirm={onConfirm}
             onMakeChanges={onMakeChanges}
             onDownload={onDownload}
