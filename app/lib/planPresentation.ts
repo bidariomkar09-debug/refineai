@@ -1,4 +1,5 @@
-import type { DbFile, PlannedFile, ProjectPlan, TechStack } from "./agentTypes";
+import type { DbFile, PlannedFile, PlanStep, ProjectPlan, TechStack } from "./agentTypes";
+import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 
 const TECH_STACK_ORDER: (keyof TechStack)[] = [
   "frontend",
@@ -132,4 +133,193 @@ export function findPlannedFile(
   if (!plan) return undefined;
   const normalized = filePath.replace(/\\/g, "/");
   return plan.files.find((f) => f.path.replace(/\\/g, "/") === normalized);
+}
+
+export type StepStatus = "pending" | "active" | "done";
+
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function purposeToStepLabel(purpose: string, path: string): string {
+  const lowerPath = path.toLowerCase();
+  if (lowerPath.includes("readme")) return "Write the setup guide";
+  if (lowerPath.includes("package.json")) return "Set up project dependencies";
+  if (lowerPath.includes("globals.css")) return "Apply theme and styling";
+  if (lowerPath.includes("layout.tsx")) return "Create the app shell and layout";
+  if (lowerPath.includes("/api/") && lowerPath.includes("chat")) {
+    return "Build the AI chat so you can talk naturally";
+  }
+  if (purpose.trim()) {
+    const cleaned = purpose.replace(/\.$/, "");
+    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+  const name = path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? path;
+  return `Build ${name.replace(/([A-Z])/g, " $1").trim()}`;
+}
+
+function isConfigFile(path: string): boolean {
+  const p = path.toLowerCase();
+  return (
+    p.includes("package.json") ||
+    p.includes("tsconfig") ||
+    p.includes("next.config") ||
+    p.includes("tailwind.config") ||
+    p.includes("postcss.config")
+  );
+}
+
+export function derivePlanSteps(plan: ProjectPlan): PlanStep[] {
+  const steps: PlanStep[] = [];
+  const paths = plan.files.map((f) => normalizePath(f.path));
+
+  const configPaths = plan.files.filter((f) => isConfigFile(f.path)).map((f) => f.path);
+  if (configPaths.length > 0) {
+    steps.push({
+      id: "foundation",
+      label: "Set up the project foundation",
+      relatedPaths: configPaths,
+    });
+  }
+
+  const layoutPaths = plan.files
+    .filter((f) => {
+      const p = f.path.toLowerCase();
+      return p.includes("layout.tsx") || p.includes("globals.css");
+    })
+    .map((f) => f.path);
+  if (layoutPaths.length > 0) {
+    steps.push({
+      id: "shell",
+      label: "Create the app layout and theme",
+      relatedPaths: layoutPaths,
+    });
+  }
+
+  const pagePaths = plan.files
+    .filter((f) => f.path.endsWith("page.tsx") && !f.path.includes("/api/"))
+    .map((f) => f.path);
+  if (pagePaths.length > 0) {
+    steps.push({
+      id: "dashboard",
+      label: "Build your main dashboard",
+      relatedPaths: pagePaths,
+    });
+  }
+
+  const componentFiles = plan.files.filter((f) => f.path.includes("/components/"));
+  for (const file of componentFiles) {
+    steps.push({
+      id: `component-${file.path}`,
+      label: purposeToStepLabel(file.purpose, file.path),
+      relatedPaths: [file.path],
+    });
+  }
+
+  const apiPaths = plan.files
+    .filter((f) => f.isApiRoute || f.path.includes("/api/"))
+    .map((f) => f.path);
+  if (apiPaths.length > 0) {
+    steps.push({
+      id: "apis",
+      label: "Connect your backend and AI endpoints",
+      relatedPaths: apiPaths,
+    });
+  }
+
+  if (plan.databaseSchema?.trim()) {
+    steps.push({
+      id: "database",
+      label: "Set up your database tables",
+      relatedPaths: [],
+    });
+  }
+
+  const readmePaths = plan.files
+    .filter((f) => f.path.toLowerCase().includes("readme"))
+    .map((f) => f.path);
+  if (readmePaths.length > 0) {
+    steps.push({
+      id: "readme",
+      label: "Write the setup guide so you can run it easily",
+      relatedPaths: readmePaths,
+    });
+  }
+
+  const covered = new Set(
+    steps.flatMap((s) => (s.relatedPaths ?? []).map(normalizePath))
+  );
+  const uncovered = plan.files.filter((f) => !covered.has(normalizePath(f.path)));
+  for (const file of uncovered) {
+    steps.push({
+      id: `file-${file.path}`,
+      label: purposeToStepLabel(file.purpose, file.path),
+      relatedPaths: [file.path],
+    });
+  }
+
+  if (steps.length === 0 && paths.length > 0) {
+    return plan.files.slice(0, 8).map((f, i) => ({
+      id: `step-${i}`,
+      label: purposeToStepLabel(f.purpose, f.path),
+      relatedPaths: [f.path],
+    }));
+  }
+
+  return steps;
+}
+
+export function getPlanSteps(plan: ProjectPlan): PlanStep[] {
+  if (plan.steps && plan.steps.length > 0) return plan.steps;
+  return derivePlanSteps(plan);
+}
+
+export function getStepStatus(
+  step: PlanStep,
+  liveFiles?: ExplorerFile[]
+): StepStatus {
+  if (!liveFiles || liveFiles.length === 0) return "pending";
+
+  const paths = (step.relatedPaths ?? []).map(normalizePath);
+  if (paths.length === 0) {
+    const doneCount = liveFiles.filter(
+      (f) => f.status === "done" || f.status === "skipped"
+    ).length;
+    if (doneCount === liveFiles.length) return "done";
+    const building = liveFiles.some((f) => f.status === "building");
+    if (building && step.id === "database") return "active";
+    if (doneCount > liveFiles.length * 0.6) return "done";
+    return "pending";
+  }
+
+  const related = liveFiles.filter((f) =>
+    paths.includes(normalizePath(f.file_path))
+  );
+  if (related.length === 0) return "pending";
+  if (related.some((f) => f.status === "building")) return "active";
+  if (related.every((f) => f.status === "done" || f.status === "skipped")) {
+    return "done";
+  }
+  if (related.some((f) => f.status === "done" || f.status === "building")) {
+    return "active";
+  }
+  return "pending";
+}
+
+export function countStepsByStatus(
+  steps: PlanStep[],
+  liveFiles?: ExplorerFile[]
+): { done: number; total: number } {
+  const total = steps.length;
+  if (!liveFiles) return { done: 0, total };
+  const done = steps.filter((s) => getStepStatus(s, liveFiles) === "done").length;
+  return { done, total };
+}
+
+export function getActiveStepLabel(
+  steps: PlanStep[],
+  liveFiles?: ExplorerFile[]
+): string | null {
+  const active = steps.find((s) => getStepStatus(s, liveFiles) === "active");
+  return active?.label ?? null;
 }

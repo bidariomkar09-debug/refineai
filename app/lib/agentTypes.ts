@@ -14,6 +14,12 @@ export type PlannedFile = {
   isApiRoute: boolean;
 };
 
+export type PlanStep = {
+  id: string;
+  label: string;
+  relatedPaths?: string[];
+};
+
 export type ProjectPlan = {
   name: string;
   description: string;
@@ -28,6 +34,7 @@ export type ProjectPlan = {
   introMessage?: string;
   revisionMessage?: string;
   estimatedMinutes?: number;
+  steps?: PlanStep[];
 };
 
 export type FileStatus =

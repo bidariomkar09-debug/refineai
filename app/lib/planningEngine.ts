@@ -1,7 +1,7 @@
 import type { ProjectPlan } from "./agentTypes";
 import { generateJSON } from "./agentAI";
 import { detectNiche, getStackForNiche } from "./techStacks";
-import { estimateBuildMinutes } from "./planPresentation";
+import { estimateBuildMinutes, derivePlanSteps } from "./planPresentation";
 
 const PLAN_SYSTEM = `You are RefineAI, an expert software architect. Create a complete project plan from the user's idea.
 
@@ -21,10 +21,17 @@ Return JSON with this exact structure:
   "databaseSchema": "SQL if needed, else empty string",
   "apiRoutes": ["/api/chat"],
   "estimatedFiles": 8,
-  "estimatedMinutes": 2
+  "estimatedMinutes": 2,
+  "steps": [
+    { "id": "1", "label": "Set up the project foundation", "relatedPaths": ["package.json", "tsconfig.json"] },
+    { "id": "2", "label": "Build your main dashboard", "relatedPaths": ["app/page.tsx"] }
+  ]
 }
 
 Rules:
+- steps: 5-8 conversational todo items describing WHAT will happen (not file paths in labels)
+- Each step label should read like a Cursor plan todo, e.g. "Build the AI chat so you can talk naturally"
+- relatedPaths must reference actual file paths from the files array
 - List 6-12 files with full paths
 - Include README.md always
 - ALWAYS include these config files: package.json, tsconfig.json, next.config.mjs, tailwind.config.ts, postcss.config.mjs, app/layout.tsx, app/globals.css
@@ -42,7 +49,7 @@ Update the existing plan based on user feedback. Return the full updated plan pl
 
 function normalizePlan(data: ProjectPlan, niche: string, suggestedStack: ReturnType<typeof getStackForNiche>): ProjectPlan {
   const fileCount = data.files?.length ?? data.estimatedFiles ?? 0;
-  return {
+  const normalized: ProjectPlan = {
     ...data,
     niche: data.niche || niche,
     techStack: { ...suggestedStack, ...data.techStack },
@@ -53,6 +60,10 @@ function normalizePlan(data: ProjectPlan, niche: string, suggestedStack: ReturnT
       data.files?.filter((f) => f.isApiRoute).map((f) => `/${f.path.replace(/\\/g, "/")}`) ??
       [],
   };
+  if (!normalized.steps?.length) {
+    normalized.steps = derivePlanSteps(normalized);
+  }
+  return normalized;
 }
 
 export async function generatePlan(idea: string): Promise<ProjectPlan> {

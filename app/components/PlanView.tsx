@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { BuildPhase, DbFile, ProjectPlan } from "@/app/lib/agentTypes";
 import { meetsQualityThreshold } from "@/app/lib/agentTypes";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
-import { getPlanIntro, getRevisionIntro } from "@/app/lib/planPresentation";
+import { getPlanIntro, getRevisionIntro, getPlanSteps, getActiveStepLabel } from "@/app/lib/planPresentation";
 import { completionMessage, USER_MESSAGES } from "@/app/lib/userMessages";
 import PlanCard from "./PlanCard";
 
@@ -159,8 +159,14 @@ export default function PlanView({
             />
           )}
 
-        {isBuilding && statusMessage && (
-          <BuildStatusBanner message={statusMessage} />
+        {isBuilding && (statusMessage || displayPlan) && (
+          <BuildStatusBanner
+            message={
+              statusMessage ||
+              getActiveStepLabel(getPlanSteps(displayPlan!), mergedFiles) ||
+              USER_MESSAGES.building
+            }
+          />
         )}
 
         {phase === "complete" && displayPlan && (
