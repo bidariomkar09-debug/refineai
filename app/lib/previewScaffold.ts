@@ -18,7 +18,9 @@ const PACKAGE_JSON = `{
     "next": "14.2.35",
     "openai": "^4.104.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "next-auth": "^4.24.11",
+    "yup": "^1.4.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",

@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { getProjectFiles } from "./db";
 import { getMissingScaffold, mergePackageJson } from "./previewScaffold";
+import { fixPreviewProject } from "./previewFixup";
 import {
   PREVIEW_PORT,
   PREVIEW_URL,
@@ -155,6 +156,7 @@ export async function materializeProject(projectId: string): Promise<string> {
   }
 
   await copyEnvLocal(projectDir);
+  await fixPreviewProject(projectDir);
   return projectDir;
 }
 
@@ -163,7 +165,7 @@ async function healthCheck(timeoutMs = 60000): Promise<boolean> {
   while (Date.now() - start < timeoutMs) {
     try {
       const res = await fetch(PREVIEW_URL, { signal: AbortSignal.timeout(2000) });
-      if (res.ok || res.status < 500) return true;
+      if (res.ok) return true;
     } catch {
       // not ready yet
     }
@@ -260,7 +262,7 @@ export async function syncPreview(projectId: string): Promise<PreviewState> {
 export async function probePreviewUrl(): Promise<boolean> {
   try {
     const res = await fetch(PREVIEW_URL, { signal: AbortSignal.timeout(3000) });
-    return res.ok || res.status < 500;
+    return res.ok;
   } catch {
     return false;
   }
