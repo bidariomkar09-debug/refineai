@@ -3,5 +3,25 @@
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "installCommand": "npm install",
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  "functions": {
+    "app/api/plan/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/build/file/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/projects/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/chat/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/preview/start/route.ts": {
+      "maxDuration": 300
+    }
+  },
+  "env": {
+    "OPENAI_MODEL": "gpt-4o"
+  }
 }
