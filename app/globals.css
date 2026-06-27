@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-surface text-gray-100 min-h-screen;
+  }
+}
+
+@layer utilities {
+  @media (prefers-reduced-motion: reduce) {
+    .motion-safe\:animate-pulse {
+      animation: none;
+    }
+    .motion-safe\:transition-all {
+      transition: none;
+    }
+  }
+}
