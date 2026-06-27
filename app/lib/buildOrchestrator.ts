@@ -151,7 +151,6 @@ export function startBuild(
         continue;
       }
 
-      callbacks.onStatus(USER_MESSAGES.buildingFile(file.file_name));
       callbacks.onFileStart(file);
 
       await fetchStream(

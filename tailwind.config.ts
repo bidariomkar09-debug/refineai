@@ -22,6 +22,13 @@ const config: Config = {
       },
       animation: {
         pulse: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "fade-in": "fade-in 0.4s ease-out forwards",
+      },
+      keyframes: {
+        "fade-in": {
+          from: { opacity: "0", transform: "translateY(6px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
       },
     },
   },

@@ -1,32 +1,23 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { BuildPhase, ChatMessage, ProjectPlan } from "@/app/lib/agentTypes";
-import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
+import type { ChatMessage } from "@/app/lib/agentTypes";
 import MessageBubble from "./MessageBubble";
-import PlanCard from "./PlanCard";
 
 type ChatMessagesProps = {
   messages: ChatMessage[];
-  plan: ProjectPlan | null;
-  phase: BuildPhase;
-  mergedFiles: ExplorerFile[];
   compact?: boolean;
 };
 
 export default function ChatMessages({
   messages,
-  plan,
-  phase,
-  mergedFiles,
   compact = false,
 }: ChatMessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  const isBuilding = phase === "building" || phase === "testing";
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, phase]);
+  }, [messages.length]);
 
   if (messages.length === 0) {
     return (
@@ -46,21 +37,8 @@ export default function ChatMessages({
           role={msg.role}
           content={msg.content}
           compact={compact}
-        >
-          {msg.type === "plan" && msg.metadata?.plan ? (
-            <PlanCard
-              plan={msg.metadata.plan as ProjectPlan}
-              liveFiles={isBuilding || phase === "complete" ? mergedFiles : undefined}
-            />
-          ) : null}
-        </MessageBubble>
+        />
       ))}
-
-      {plan && phase === "awaiting_confirm" && !messages.some((m) => m.type === "plan") && (
-        <MessageBubble role="assistant" content="" compact={compact}>
-          <PlanCard plan={plan} liveFiles={mergedFiles} />
-        </MessageBubble>
-      )}
 
       <div ref={bottomRef} />
     </div>

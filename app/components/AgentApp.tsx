@@ -18,7 +18,13 @@ import {
   updateFileInList,
   type ExplorerFile,
 } from "@/app/lib/mergeProjectFiles";
-import { USER_MESSAGES } from "@/app/lib/userMessages";
+import {
+  findPlannedFile,
+  getFriendlyBuildMessage,
+  getPlanIntro,
+  getRevisionIntro,
+} from "@/app/lib/planPresentation";
+import { completionMessage, fileCompleteMessage, USER_MESSAGES } from "@/app/lib/userMessages";
 import type { PreviewLogLine, PreviewStatus } from "@/app/lib/previewTypes";
 import Sidebar, { SidebarToggle } from "./Sidebar";
 import CenterPanel, { type CenterTab } from "./CenterPanel";
@@ -47,6 +53,7 @@ export default function AgentApp() {
   const [isLoading, setIsLoading] = useState(false);
   const [awaitingChanges, setAwaitingChanges] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [planIntro, setPlanIntro] = useState<string | null>(null);
 
   const [centerTab, setCenterTab] = useState<CenterTab>("plan");
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
@@ -72,6 +79,11 @@ export default function AgentApp() {
   const buildAbortRef = useRef<AbortController | null>(null);
   const controlsRef = useRef<OrchestratorControls | null>(null);
   const activeFileIdRef = useRef<string | null>(null);
+  const planRef = useRef<ProjectPlan | null>(null);
+
+  useEffect(() => {
+    planRef.current = plan;
+  }, [plan]);
 
   const mergedFiles = useMemo(
     () => mergeProjectFiles(plan, files, projectId),
@@ -271,6 +283,7 @@ export default function AgentApp() {
     setStatusMessage("");
     setShowConfirm(false);
     setAwaitingChanges(false);
+    setPlanIntro(null);
     setCenterTab("plan");
     setSelectedFileId(null);
     setViewerCode("");
@@ -302,17 +315,34 @@ export default function AgentApp() {
           content: string;
           type: string;
           metadata: Record<string, unknown>;
-        }) => ({
-          id: m.id,
-          role: m.role,
-          content: m.type === "plan" ? "Here's your project plan:" : m.content,
-          type: m.type as ChatMessage["type"],
-          metadata: m.metadata,
-        })
+        }) => {
+          if (m.type === "plan") {
+            const metaPlan = m.metadata?.plan as ProjectPlan | undefined;
+            return {
+              id: m.id,
+              role: m.role,
+              content: metaPlan
+                ? getPlanIntro(metaPlan)
+                : loadedPlan
+                  ? getPlanIntro(loadedPlan)
+                  : "Here's your project plan.",
+              type: "chat" as const,
+              metadata: m.metadata,
+            };
+          }
+          return {
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            type: m.type as ChatMessage["type"],
+            metadata: m.metadata,
+          };
+        }
       );
 
       setProjectId(project.id);
       setPlan(loadedPlan);
+      setPlanIntro(getPlanIntro(loadedPlan));
       setFiles(loadedFiles);
       setMessages(loadedMessages);
       setSelectedFileId(null);
@@ -401,6 +431,7 @@ export default function AgentApp() {
       setIsLoading(true);
       setPhase("planning");
       setCenterTab("plan");
+      setPlanIntro(null);
       setStatusMessage(USER_MESSAGES.planning);
       setMessages((prev) => [
         ...prev,
@@ -411,8 +442,10 @@ export default function AgentApp() {
         if (event.type === "status") {
           setStatusMessage(event.message);
         } else if (event.type === "plan") {
+          const intro = getPlanIntro(event.data);
           setProjectId(event.projectId);
           setPlan(event.data);
+          setPlanIntro(intro);
           setPhase("awaiting_confirm");
           setShowConfirm(true);
           setCenterTab("plan");
@@ -421,9 +454,8 @@ export default function AgentApp() {
             {
               id: newId(),
               role: "assistant",
-              content: "Here's your project plan:",
-              type: "plan",
-              metadata: { plan: event.data },
+              content: intro,
+              type: "chat",
             },
           ]);
           refreshFiles(event.projectId);
@@ -457,7 +489,9 @@ export default function AgentApp() {
         if (event.type === "status") {
           setStatusMessage(event.message);
         } else if (event.type === "plan") {
+          const intro = getRevisionIntro(event.data);
           setPlan(event.data);
+          setPlanIntro(intro);
           setPhase("awaiting_confirm");
           setShowConfirm(true);
           setCenterTab("plan");
@@ -466,9 +500,8 @@ export default function AgentApp() {
             {
               id: newId(),
               role: "assistant",
-              content: "Here's your updated plan:",
-              type: "plan",
-              metadata: { plan: event.data },
+              content: intro,
+              type: "chat",
             },
           ]);
           refreshFiles(event.projectId);
@@ -532,7 +565,12 @@ export default function AgentApp() {
           setFiles((prev) =>
             syncFileIntoList(prev, { ...file, status: "building" })
           );
-          appendBuildMessage(USER_MESSAGES.fileStarted(file.file_path));
+          const planned = findPlannedFile(planRef.current, file.file_path);
+          const friendlyMsg = planned
+            ? getFriendlyBuildMessage(planned)
+            : getFriendlyBuildMessage(file);
+          setStatusMessage(friendlyMsg);
+          appendBuildMessage(friendlyMsg);
         },
         onRound: (fileId, event) => {
           const round = event.data;
@@ -559,9 +597,9 @@ export default function AgentApp() {
           refreshFiles(projectId).then((updated) => {
             const completed = updated?.find((f) => f.id === fileId);
             if (completed) {
-              appendBuildMessage(
-                USER_MESSAGES.fileComplete(completed.file_path, score)
-              );
+              const planned = findPlannedFile(planRef.current, completed.file_path);
+              const friendlyName = planned?.purpose ?? completed.file_name;
+              appendBuildMessage(fileCompleteMessage(friendlyName, score));
               if (selectedFileId === fileId) {
                 setViewerCode(completed.content ?? "");
               }
@@ -576,9 +614,17 @@ export default function AgentApp() {
           setActiveProgress(null);
           setActiveFile(null);
           setCenterTab("plan");
-          appendBuildMessage(USER_MESSAGES.complete);
+          refreshFiles(projectId).then((updated) => {
+            const done = (updated ?? []).filter((f) => f.status === "done");
+            const avgScore =
+              done.length > 0
+                ? Math.round(done.reduce((s, f) => s + f.score, 0) / done.length)
+                : 0;
+            appendBuildMessage(
+              completionMessage(finalPlan.name, done.length, avgScore)
+            );
+          });
           loadProjects();
-          refreshFiles(projectId);
           syncPreviewIfRunning();
         },
       },
@@ -600,6 +646,15 @@ export default function AgentApp() {
     setAwaitingChanges(true);
     setShowConfirm(false);
     setCenterTab("plan");
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: newId(),
+        role: "assistant",
+        content: USER_MESSAGES.makeChangesPrompt,
+        type: "chat",
+      },
+    ]);
   }, []);
 
   useEffect(() => {
@@ -685,6 +740,7 @@ export default function AgentApp() {
           isPreviewRunning={isPreviewStarting || previewStatus === "installing" || previewStatus === "starting"}
           confirmDisabled={isLoading}
           isLoading={isLoading}
+          planIntro={planIntro}
           previewStatus={previewStatus}
           previewLastUpdated={previewLastUpdated}
           previewIframeKey={previewIframeKey}

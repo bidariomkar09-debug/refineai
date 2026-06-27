@@ -33,6 +33,7 @@ type CenterPanelProps = {
   isPreviewRunning: boolean;
   confirmDisabled: boolean;
   isLoading: boolean;
+  planIntro: string | null;
   previewStatus: PreviewStatus;
   previewLastUpdated: string | null;
   previewIframeKey: number;
@@ -93,6 +94,7 @@ export default function CenterPanel({
   isPreviewRunning,
   confirmDisabled,
   isLoading,
+  planIntro,
   previewStatus,
   previewLastUpdated,
   previewIframeKey,
@@ -136,6 +138,7 @@ export default function CenterPanel({
             activeFileId={activeFileId}
             files={files}
             isLoading={isLoading}
+            planIntro={planIntro}
             onConfirm={onConfirm}
             onMakeChanges={onMakeChanges}
             onDownload={onDownload}

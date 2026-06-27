@@ -14,6 +14,7 @@ import {
 import { generatePlanRevision } from "@/app/lib/planningEngine";
 import { generateSummary } from "@/app/lib/agentAI";
 import { createSSEStream, sseResponse } from "@/app/lib/streamClient";
+import { getRevisionIntro } from "@/app/lib/planPresentation";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
 import type { ProjectPlan } from "@/app/lib/agentTypes";
 import { meetsQualityThreshold } from "@/app/lib/agentTypes";
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
     await deleteProjectFiles(projectId);
     await createProjectFiles(projectId, revisedPlan);
     await addMessage(projectId, "user", message, "chat");
-    await addMessage(projectId, "assistant", JSON.stringify(revisedPlan), "plan", {
+    await addMessage(projectId, "assistant", getRevisionIntro(revisedPlan), "plan", {
       plan: revisedPlan,
     });
 

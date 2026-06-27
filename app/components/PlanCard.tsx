@@ -3,10 +3,26 @@
 import type { FileStatus, ProjectPlan } from "@/app/lib/agentTypes";
 import { meetsQualityThreshold } from "@/app/lib/agentTypes";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
+import {
+  estimateBuildMinutes,
+  formatApiRoutes,
+  formatDatabaseTables,
+  formatTechStackLine,
+  truncateFileList,
+} from "@/app/lib/planPresentation";
+import FileIcon from "./FileIcon";
+
+type PlanCardVariant = "plan" | "building" | "complete";
 
 type PlanCardProps = {
   plan: ProjectPlan;
   liveFiles?: ExplorerFile[];
+  variant?: PlanCardVariant;
+  showActions?: boolean;
+  onConfirm?: () => void;
+  onMakeChanges?: () => void;
+  confirmDisabled?: boolean;
+  animate?: boolean;
 };
 
 function statusDot(status: FileStatus, score: number) {
@@ -23,107 +39,148 @@ function getLiveStatus(path: string, liveFiles?: ExplorerFile[]): ExplorerFile |
   return liveFiles.find((f) => f.file_path.replace(/\\/g, "/") === normalized);
 }
 
-export default function PlanCard({ plan, liveFiles }: PlanCardProps) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="space-y-4 text-sm">
-      <div>
-        <h3 className="text-lg font-bold text-white">{plan.name}</h3>
-        <p className="mt-1 text-gray-400">{plan.description}</p>
+    <p className="mb-1.5 text-xs font-medium text-gray-400">{children}</p>
+  );
+}
+
+export default function PlanCard({
+  plan,
+  liveFiles,
+  variant = "plan",
+  showActions = false,
+  onConfirm,
+  onMakeChanges,
+  confirmDisabled = false,
+  animate = true,
+}: PlanCardProps) {
+  const { visible: visibleFiles, remaining } = truncateFileList(plan.files, 10);
+  const fileCount = plan.files.length;
+  const minutes = estimateBuildMinutes(fileCount, plan.estimatedMinutes);
+  const dbTables = formatDatabaseTables(plan.databaseSchema);
+  const apiLine = formatApiRoutes(plan.apiRoutes);
+  const showLiveStatus = variant === "building" || variant === "complete";
+
+  const fadeClass = animate ? "motion-safe:animate-fade-in" : "";
+
+  return (
+    <div
+      className={`overflow-hidden rounded-xl border border-surface-border bg-surface-raised text-sm shadow-lg shadow-black/20 ${fadeClass}`}
+    >
+      <div className="border-b border-surface-border px-5 py-4">
+        <h3 className="text-base font-bold text-white">
+          <span className="mr-1.5" aria-hidden="true">
+            🚀
+          </span>
+          {plan.name}
+        </h3>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-lg bg-surface px-3 py-2">
-          <span className="text-gray-500">Niche</span>
-          <p className="font-medium capitalize text-white">{plan.niche}</p>
-        </div>
-        <div className="rounded-lg bg-surface px-3 py-2">
-          <span className="text-gray-500">Files</span>
-          <p className="font-medium text-white">{plan.estimatedFiles}</p>
-        </div>
-      </div>
-
-      <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
-          Tech Stack
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {Object.entries(plan.techStack).map(([key, val]) => (
-            <span
-              key={key}
-              className="rounded-full bg-accent/10 px-2.5 py-0.5 text-xs text-accent"
-            >
-              {val}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
-          Files to Build
-        </p>
-        <ul className="space-y-1">
-          {plan.files.map((f) => {
-            const live = getLiveStatus(f.path, liveFiles);
-            const status = live?.status ?? "pending";
-            const score = live?.score ?? 0;
-            return (
-              <li
-                key={f.path}
-                className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${
-                  status === "building"
-                    ? "border border-accent/20 bg-accent/5"
-                    : status === "done"
-                      ? "bg-accent-green/5"
-                      : "bg-surface/50"
-                }`}
-              >
-                <span
-                  className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${statusDot(status, score)}`}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate font-mono text-gray-300">{f.path}</span>
-                    {live && live.score > 0 && (
-                      <span className="shrink-0 font-semibold text-accent-green">
-                        {live.score}%
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-gray-500">{f.purpose}</p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-
-      {plan.databaseSchema && plan.databaseSchema.trim() && (
+      <div className="space-y-4 px-5 py-4">
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
-            Database Schema
+          <SectionLabel>What I&apos;ll build:</SectionLabel>
+          <p className="leading-relaxed text-gray-300">{plan.description}</p>
+        </div>
+
+        <div>
+          <SectionLabel>Tech Stack:</SectionLabel>
+          <p className="text-gray-200">{formatTechStackLine(plan.techStack)}</p>
+        </div>
+
+        <div>
+          <SectionLabel>
+            Files I&apos;ll create: ({fileCount} file{fileCount === 1 ? "" : "s"})
+          </SectionLabel>
+          <ul className="space-y-1">
+            {visibleFiles.map((f) => {
+              const live = getLiveStatus(f.path, showLiveStatus ? liveFiles : undefined);
+              const status = live?.status ?? "pending";
+              const score = live?.score ?? 0;
+              const isActive = status === "building";
+
+              return (
+                <li
+                  key={f.path}
+                  className={`flex items-start gap-2 rounded-lg px-2 py-1.5 transition-colors duration-200 ${
+                    isActive
+                      ? "border border-accent/20 bg-accent/5"
+                      : status === "done"
+                        ? "bg-accent-green/5"
+                        : ""
+                  }`}
+                >
+                  {showLiveStatus && live ? (
+                    <span
+                      className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${statusDot(status, score)}`}
+                    />
+                  ) : (
+                    <FileIcon filePath={f.path} className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-gray-200">
+                        <span className="font-mono text-[11px] text-gray-400">{f.path}</span>
+                        <span className="mx-1.5 text-gray-600">—</span>
+                        <span className="text-xs text-gray-300">{f.purpose}</span>
+                      </span>
+                      {live && live.score > 0 && status === "done" && (
+                        <span className="shrink-0 text-xs font-semibold text-accent-green">
+                          {live.score}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+            {remaining > 0 && (
+              <li className="px-2 py-1 text-xs text-gray-500">... and {remaining} more</li>
+            )}
+          </ul>
+        </div>
+
+        {dbTables && (
+          <div>
+            <SectionLabel>Database:</SectionLabel>
+            <p className="text-gray-200">{dbTables}</p>
+          </div>
+        )}
+
+        {apiLine && (
+          <div>
+            <SectionLabel>API Routes:</SectionLabel>
+            <p className="font-mono text-xs text-gray-300">{apiLine}</p>
+          </div>
+        )}
+      </div>
+
+      {variant !== "complete" && (
+        <div className="border-t border-surface-border px-5 py-3">
+          <p className="text-xs text-gray-400">
+            Estimated time: ~{minutes} minute{minutes === 1 ? "" : "s"}
           </p>
-          <pre className="max-h-32 overflow-auto rounded-lg bg-black/40 p-3 text-[10px] text-green-400">
-            {plan.databaseSchema}
-          </pre>
         </div>
       )}
 
-      {plan.apiRoutes.length > 0 && (
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
-            API Routes
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {plan.apiRoutes.map((route) => (
-              <span
-                key={route}
-                className="rounded bg-surface px-2 py-0.5 font-mono text-xs text-gray-300"
-              >
-                {route}
-              </span>
-            ))}
-          </div>
+      {showActions && onConfirm && onMakeChanges && (
+        <div className="flex flex-wrap gap-3 border-t border-surface-border px-5 py-4">
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={confirmDisabled}
+            className="rounded-xl bg-accent-green px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            🔨 Start Building
+          </button>
+          <button
+            type="button"
+            onClick={onMakeChanges}
+            disabled={confirmDisabled}
+            className="rounded-xl border border-surface-border bg-surface px-5 py-2.5 text-sm font-medium text-gray-300 transition hover:border-gray-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            ✏️ Make Changes
+          </button>
         </div>
       )}
     </div>

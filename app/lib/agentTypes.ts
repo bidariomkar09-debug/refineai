@@ -25,6 +25,9 @@ export type ProjectPlan = {
   estimatedFiles: number;
   setupInstructions?: string;
   deployInstructions?: string;
+  introMessage?: string;
+  revisionMessage?: string;
+  estimatedMinutes?: number;
 };
 
 export type FileStatus =

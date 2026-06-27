@@ -1,22 +1,25 @@
 export const USER_MESSAGES = {
   planning: "Planning your project...",
-  building: "Building your app...",
-  buildingFile: (name: string) => `Building ${name}...`,
-  reviewing: "Reviewing the code...",
-  refining: "Making improvements...",
-  testing: "Testing the API...",
+  building: "Getting started on your app...",
+  buildingFile: (name: string) => `Working on ${name}...`,
+  reviewing: "Reviewing everything looks good...",
+  refining: "Polishing a few details...",
+  testing: "Running a quick check...",
   fixing: "Fixing a few things...",
-  almostDone: "Almost done...",
+  almostDone: "Almost there...",
   complete: "Your project is ready!",
   paused: "Build paused.",
   changesReceived: "Updating your plan...",
-  fileStarted: (path: string) => `Building ${path}...`,
-  fileComplete: (path: string, score: number) => `Finished ${path} — ${score}%`,
+  fileStarted: (message: string) => message,
+  fileComplete: (message: string) => message,
   startingApp: "Starting your app...",
   installingDeps: "Installing dependencies...",
   previewReady: "Your app is running!",
   previewError: "Fixing a few things...",
   qualityTarget: "Target: 95%+ quality",
+  makeChangesPrompt: "Sure! What would you like to change?",
+  revisionFallback: "I've updated the plan based on your feedback — here's what changed:",
+  planningEmpty: "Describe your app idea in the chat panel on the right.",
 } as const;
 
 export function getFileStatusMessage(task: "write" | "review" | "refine"): string {
@@ -28,4 +31,20 @@ export function getFileStatusMessage(task: "write" | "review" | "refine"): strin
     case "refine":
       return USER_MESSAGES.refining;
   }
+}
+
+export function completionMessage(
+  name: string,
+  fileCount: number,
+  avgScore: number
+): string {
+  const scorePart =
+    avgScore > 0
+      ? ` I built ${fileCount} file${fileCount === 1 ? "" : "s"} with an average quality score of ${avgScore}%.`
+      : ` I built ${fileCount} file${fileCount === 1 ? "" : "s"}.`;
+  return `Your ${name} is ready! 🎉${scorePart} Here's how to run it...`;
+}
+
+export function fileCompleteMessage(friendlyName: string, score: number): string {
+  return `Finished ${friendlyName} — looking great at ${score}%!`;
 }

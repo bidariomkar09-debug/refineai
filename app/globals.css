@@ -17,6 +17,9 @@
     .motion-safe\:animate-pulse {
       animation: none;
     }
+    .motion-safe\:animate-fade-in {
+      animation: none;
+    }
     .motion-safe\:transition-all {
       transition: none;
     }

@@ -7,8 +7,8 @@ import {
   testConnection,
 } from "@/app/lib/db";
 import { createSSEStream, sseResponse } from "@/app/lib/streamClient";
+import { getPlanIntro } from "@/app/lib/planPresentation";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
-import type { SSEEvent } from "@/app/lib/agentTypes";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       const project = await createProject(plan);
       await createProjectFiles(project.id, plan);
       await addMessage(project.id, "user", idea, "chat");
-      await addMessage(project.id, "assistant", JSON.stringify(plan), "plan", {
+      await addMessage(project.id, "assistant", getPlanIntro(plan), "plan", {
         plan,
       });
 

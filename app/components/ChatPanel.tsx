@@ -21,23 +21,18 @@ type ChatPanelProps = {
 
 function PanelContent({
   messages,
-  plan,
   phase,
-  mergedFiles,
   isLoading,
   awaitingChanges,
   onSubmit,
-}: Omit<ChatPanelProps, "isOpen" | "collapsed" | "onClose" | "onToggleCollapse">) {
+}: Pick<
+  ChatPanelProps,
+  "messages" | "phase" | "isLoading" | "awaitingChanges" | "onSubmit"
+>) {
   return (
     <>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <ChatMessages
-          messages={messages}
-          plan={plan}
-          phase={phase}
-          mergedFiles={mergedFiles}
-          compact
-        />
+        <ChatMessages messages={messages} compact />
       </div>
 
       <InputBox

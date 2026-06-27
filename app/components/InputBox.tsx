@@ -14,7 +14,7 @@ type InputBoxProps = {
 
 function getPlaceholder(phase: BuildPhase, awaitingChanges: boolean): string {
   if (awaitingChanges) {
-    return "Describe what you'd like to change...";
+    return "e.g. add a pomodoro timer";
   }
   if (phase === "building" || phase === "testing") {
     return "Message while building...";
