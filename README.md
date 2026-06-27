@@ -1,10 +1,10 @@
 # RefineAI
 
-RefineAI is a loop prompting chatbot that generates, critiques, and refines AI output until it matches your target description (90%+ quality score). Sessions and rounds are persisted in Supabase.
+RefineAI is a loop prompting chatbot that generates, critiques, and refines AI output until it matches your target description (95%+ quality score). Sessions and rounds are persisted in Supabase.
 
 ## Features
 
-- **Automatic loop**: Generate → Critique → Refine until quality hits 90%+
+- **Automatic loop**: Generate → Critique → Refine until quality hits 95%+
 - **Supabase persistence**: Every session and round saved to the database
 - **Session history**: Browse past sessions and view all rounds
 - **Live status**: Generating / Critiquing / Refining indicators
@@ -81,10 +81,10 @@ Expected response when configured correctly:
 | 1     | Generate  | First attempt based on user target   |
 | 2     | Critique  | What is missing or wrong?            |
 | 3     | Refine    | Improve based on critique            |
-| 4+    | Alternate | Critique → Refine until score ≥ 90%  |
+| 4+    | Alternate | Critique → Refine until score ≥ 95%  |
 
 The loop stops when:
-- Quality score reaches **90%+** (session status: `completed`)
+- Quality score reaches **95%+** (session status: `completed`)
 - User clicks **STOP** (session status: `stopped`)
 - **12 rounds** max (session status: `completed`)
 
