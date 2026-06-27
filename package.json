@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "sync": "bash scripts/sync-and-push.sh",
+    "sync:msg": "bash scripts/sync-and-push.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
