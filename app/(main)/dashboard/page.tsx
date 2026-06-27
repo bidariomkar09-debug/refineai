@@ -12,14 +12,6 @@ function formatStatus(status: string) {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [accountName, setAccountName] = useState("Developer");
@@ -47,10 +39,9 @@ export default function DashboardPage() {
     return (
       <div>
         <div className="mb-6 h-8 w-48 animate-pulse rounded bg-white/10" />
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <SkeletonCard key={i} />
-          ))}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <SkeletonCard className="h-36" />
+          <SkeletonCard className="h-36" />
         </div>
       </div>
     );
@@ -80,66 +71,45 @@ export default function DashboardPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total Projects" value={stats.totalProjects} />
-        <StatCard label="Files Generated" value={stats.totalFiles} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <StatCard label="Total Projects" value={stats.totalProjects} large />
         <StatCard
           label="Average Quality"
           value={stats.averageScore || "—"}
           suffix={stats.averageScore ? "%" : undefined}
+          large
         />
-        <StatCard label="Total Loops Run" value={stats.totalLoops} />
       </div>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-2">
-        <section className="rounded-xl border border-white/10 bg-[#16161f] p-5">
-          <h2 className="mb-4 text-lg font-medium text-white">Recent Projects</h2>
-          {stats.recentProjects.length === 0 ? (
-            <p className="text-sm text-gray-400">No projects yet. Start your first build!</p>
-          ) : (
-            <ul className="space-y-3">
-              {stats.recentProjects.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex min-h-[44px] items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-4 py-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-white">{p.name}</p>
-                    <p className="text-xs text-gray-500">
-                      {formatStatus(p.status)} · {p.fileCount} files ·{" "}
-                      {p.avgScore > 0 ? `${p.avgScore}% avg` : "No scores yet"}
-                    </p>
-                  </div>
-                  <Link
-                    href={`/workspace?projectId=${p.id}`}
-                    className="touch-target shrink-0 px-3 py-2 text-sm text-indigo-400 hover:text-indigo-300"
-                  >
-                    Open
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="rounded-xl border border-white/10 bg-[#16161f] p-5">
-          <h2 className="mb-4 text-lg font-medium text-white">Activity Feed</h2>
-          {stats.activity.length === 0 ? (
-            <p className="text-sm text-gray-400">No recent activity.</p>
-          ) : (
-            <ul className="space-y-3">
-              {stats.activity.map((a) => (
-                <li key={a.id} className="border-l-2 border-indigo-500/40 pl-4">
-                  <p className="text-sm text-gray-200">{a.message}</p>
-                  <p className="mt-0.5 text-xs text-gray-500">
-                    {a.projectName} · {formatDate(a.timestamp)}
+      <section className="mt-8 rounded-xl border border-white/10 bg-[#16161f] p-5 lg:p-6">
+        <h2 className="mb-4 text-lg font-medium text-white">Recent Projects</h2>
+        {stats.recentProjects.length === 0 ? (
+          <p className="text-sm text-gray-400">No projects yet. Start your first build!</p>
+        ) : (
+          <ul className="space-y-3">
+            {stats.recentProjects.map((p) => (
+              <li
+                key={p.id}
+                className="flex min-h-[44px] items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-4 py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-white">{p.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {formatStatus(p.status)} · {p.fileCount} files ·{" "}
+                    {p.avgScore > 0 ? `${p.avgScore}% avg` : "No scores yet"}
                   </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
+                </div>
+                <Link
+                  href={`/workspace?projectId=${p.id}`}
+                  className="touch-target shrink-0 px-3 py-2 text-sm text-indigo-400 hover:text-indigo-300"
+                >
+                  Open
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
