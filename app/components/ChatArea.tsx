@@ -30,6 +30,9 @@ type ChatAreaProps = {
   onConfirm: () => void;
   onMakeChanges: () => void;
   onDownload: () => void;
+  onRunApp: () => void;
+  isRunDisabled: boolean;
+  isPreviewRunning: boolean;
   confirmDisabled: boolean;
   isLoading: boolean;
 };
@@ -48,6 +51,9 @@ export default function ChatArea({
   onConfirm,
   onMakeChanges,
   onDownload,
+  onRunApp,
+  isRunDisabled,
+  isPreviewRunning,
   confirmDisabled,
   isLoading,
 }: ChatAreaProps) {
@@ -139,6 +145,9 @@ export default function ChatArea({
                   plan={displayPlan}
                   files={files}
                   onDownload={onDownload}
+                  onRunApp={onRunApp}
+                  isRunning={isPreviewRunning}
+                  runDisabled={isRunDisabled}
                 />
               </MessageBubble>
             )}

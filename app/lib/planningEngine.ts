@@ -24,6 +24,7 @@ Return JSON with this exact structure:
 Rules:
 - List 6-12 files with full paths
 - Include README.md always
+- ALWAYS include these config files: package.json, tsconfig.json, next.config.mjs, tailwind.config.ts, postcss.config.mjs, app/layout.tsx, app/globals.css
 - Mark isApiRoute true for app/api/**/route.ts files
 - Use Next.js 14 App Router conventions
 - Cap at 12 files maximum`;

@@ -12,6 +12,10 @@ export const USER_MESSAGES = {
   changesReceived: "Updating your plan...",
   fileStarted: (path: string) => `Building ${path}...`,
   fileComplete: (path: string, score: number) => `Finished ${path} — ${score}%`,
+  startingApp: "Starting your app...",
+  installingDeps: "Installing dependencies...",
+  previewReady: "Your app is running!",
+  previewError: "Fixing a few things...",
 } as const;
 
 export function getFileStatusMessage(task: "write" | "review" | "refine"): string {

@@ -6,9 +6,19 @@ type SummaryCardProps = {
   plan: ProjectPlan;
   files: DbFile[];
   onDownload: () => void;
+  onRunApp: () => void;
+  isRunning: boolean;
+  runDisabled: boolean;
 };
 
-export default function SummaryCard({ plan, files, onDownload }: SummaryCardProps) {
+export default function SummaryCard({
+  plan,
+  files,
+  onDownload,
+  onRunApp,
+  isRunning,
+  runDisabled,
+}: SummaryCardProps) {
   const doneCount = files.filter((f) => f.status === "done").length;
 
   return (
@@ -23,13 +33,22 @@ export default function SummaryCard({ plan, files, onDownload }: SummaryCardProp
         </div>
       </div>
 
+      <button
+        type="button"
+        onClick={onRunApp}
+        disabled={runDisabled || isRunning}
+        className="w-full rounded-xl bg-accent-green py-3 text-sm font-semibold text-white transition hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {isRunning ? "Starting app..." : "Run App"}
+      </button>
+
       <div>
         <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
           How to run
         </p>
         <p className="text-gray-300">
           {plan.setupInstructions ??
-            "Open the project folder, run npm install, add your API keys to .env.local, then npm run dev."}
+            "Click Run App above to preview your project live."}
         </p>
       </div>
 

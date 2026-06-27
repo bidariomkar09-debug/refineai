@@ -3,11 +3,13 @@
 import type { ReactNode } from "react";
 import type { BuildPhase, ChatMessage, DbFile, FileRoundEvent, ProjectPlan } from "@/app/lib/agentTypes";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
+import type { PreviewLogLine, PreviewStatus } from "@/app/lib/previewTypes";
 import ChatArea from "./ChatArea";
 import InputBox from "./InputBox";
 import CodeViewer from "./CodeViewer";
+import PreviewPanel from "./PreviewPanel";
 
-export type CenterTab = "chat" | "code";
+export type CenterTab = "chat" | "code" | "preview";
 
 type CenterPanelProps = {
   centerTab: CenterTab;
@@ -28,10 +30,23 @@ type CenterPanelProps = {
   onConfirm: () => void;
   onMakeChanges: () => void;
   onDownload: () => void;
+  onRunApp: () => void;
+  isRunDisabled: boolean;
+  isPreviewRunning: boolean;
   confirmDisabled: boolean;
   isLoading: boolean;
   onSubmit: (text: string) => void;
   awaitingChanges: boolean;
+  previewStatus: PreviewStatus;
+  previewLastUpdated: string | null;
+  previewIframeKey: number;
+  previewViewport: "desktop" | "mobile";
+  previewLogs: PreviewLogLine[];
+  terminalOpen: boolean;
+  onToggleTerminal: () => void;
+  onPreviewRefresh: () => void;
+  onPreviewRetry: () => void;
+  onPreviewViewportChange: (v: "desktop" | "mobile") => void;
 };
 
 function TabButton({
@@ -78,10 +93,23 @@ export default function CenterPanel({
   onConfirm,
   onMakeChanges,
   onDownload,
+  onRunApp,
+  isRunDisabled,
+  isPreviewRunning,
   confirmDisabled,
   isLoading,
   onSubmit,
   awaitingChanges,
+  previewStatus,
+  previewLastUpdated,
+  previewIframeKey,
+  previewViewport,
+  previewLogs,
+  terminalOpen,
+  onToggleTerminal,
+  onPreviewRefresh,
+  onPreviewRetry,
+  onPreviewViewportChange,
 }: CenterPanelProps) {
   return (
     <div className="flex min-w-0 flex-1 flex-col">
@@ -91,6 +119,9 @@ export default function CenterPanel({
         </TabButton>
         <TabButton active={centerTab === "code"} onClick={() => onTabChange("code")}>
           Code
+        </TabButton>
+        <TabButton active={centerTab === "preview"} onClick={() => onTabChange("preview")}>
+          Preview
         </TabButton>
       </div>
 
@@ -114,6 +145,9 @@ export default function CenterPanel({
             onConfirm={onConfirm}
             onMakeChanges={onMakeChanges}
             onDownload={onDownload}
+            onRunApp={onRunApp}
+            isRunDisabled={isRunDisabled}
+            isPreviewRunning={isPreviewRunning}
             confirmDisabled={confirmDisabled}
             isLoading={isLoading}
           />
@@ -136,6 +170,25 @@ export default function CenterPanel({
             code={viewerCode}
             activeFileId={activeFileId}
             currentRound={currentRound}
+          />
+        </div>
+
+        <div
+          className={`absolute inset-0 motion-safe:transition-opacity duration-200 ${
+            centerTab === "preview" ? "opacity-100" : "pointer-events-none opacity-0"
+          }`}
+        >
+          <PreviewPanel
+            status={previewStatus}
+            lastUpdated={previewLastUpdated}
+            iframeKey={previewIframeKey}
+            viewport={previewViewport}
+            logs={previewLogs}
+            terminalOpen={terminalOpen}
+            onToggleTerminal={onToggleTerminal}
+            onRefresh={onPreviewRefresh}
+            onRetry={onPreviewRetry}
+            onViewportChange={onPreviewViewportChange}
           />
         </div>
       </div>

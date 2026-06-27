@@ -18,6 +18,7 @@ import {
   type ExplorerFile,
 } from "@/app/lib/mergeProjectFiles";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
+import type { PreviewLogLine, PreviewStatus } from "@/app/lib/previewTypes";
 import Sidebar, { SidebarToggle, FileBuilderToggle } from "./Sidebar";
 import CenterPanel, { type CenterTab } from "./CenterPanel";
 import FileBuilder from "./FileBuilder";
@@ -57,6 +58,15 @@ export default function AgentApp() {
     fileName: string;
     round: FileRoundEvent | null;
   } | null>(null);
+
+  const [previewStatus, setPreviewStatus] = useState<PreviewStatus>("idle");
+  const [previewLogs, setPreviewLogs] = useState<PreviewLogLine[]>([]);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [previewViewport, setPreviewViewport] = useState<"desktop" | "mobile">("desktop");
+  const [previewLastUpdated, setPreviewLastUpdated] = useState<string | null>(null);
+  const [previewIframeKey, setPreviewIframeKey] = useState(0);
+  const [isPreviewStarting, setIsPreviewStarting] = useState(false);
+  const wasPreviewRunningRef = useRef(false);
 
   const buildAbortRef = useRef<AbortController | null>(null);
   const controlsRef = useRef<OrchestratorControls | null>(null);
@@ -121,6 +131,116 @@ export default function AgentApp() {
     [currentCode]
   );
 
+  const handleRunApp = useCallback(async () => {
+    if (!projectId) return;
+    setIsPreviewStarting(true);
+    setPreviewStatus("installing");
+    setPreviewLogs([]);
+    setTerminalOpen(true);
+    setCenterTab("preview");
+    appendBuildMessage(USER_MESSAGES.startingApp);
+
+    try {
+      const response = await fetch("/api/preview/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+
+      if (!response.ok || !response.body) {
+        setPreviewStatus("error");
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6)) as {
+              type: string;
+              data: PreviewLogLine | {
+                status: PreviewStatus;
+                lastUpdated: string | null;
+                error: string | null;
+              };
+            };
+
+            if (event.type === "log") {
+              setPreviewLogs((prev) => [...prev, event.data as PreviewLogLine]);
+              const log = event.data as PreviewLogLine;
+              if (log.type === "status") {
+                setPreviewStatus(log.message as PreviewStatus);
+              }
+            } else if (event.type === "status") {
+              const st = event.data as {
+                status: PreviewStatus;
+                lastUpdated: string | null;
+                error: string | null;
+              };
+              setPreviewStatus(st.status);
+              setPreviewLastUpdated(st.lastUpdated);
+              if (st.status === "running") {
+                wasPreviewRunningRef.current = true;
+                setPreviewIframeKey((k) => k + 1);
+                appendBuildMessage(USER_MESSAGES.previewReady);
+                setCenterTab("preview");
+              } else if (st.status === "error") {
+                appendBuildMessage(USER_MESSAGES.previewError);
+              }
+            }
+          } catch {
+            // skip malformed
+          }
+        }
+      }
+    } catch {
+      setPreviewStatus("error");
+      appendBuildMessage(USER_MESSAGES.previewError);
+    } finally {
+      setIsPreviewStarting(false);
+    }
+  }, [projectId, appendBuildMessage]);
+
+  const handlePreviewRefresh = useCallback(() => {
+    setPreviewIframeKey((k) => k + 1);
+    setPreviewLastUpdated(new Date().toISOString());
+  }, []);
+
+  const handlePreviewRetry = useCallback(() => {
+    handleRunApp();
+  }, [handleRunApp]);
+
+  const syncPreviewIfRunning = useCallback(async () => {
+    if (!projectId || !wasPreviewRunningRef.current) return;
+    try {
+      const res = await fetch("/api/preview/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      const data = await res.json();
+      setPreviewStatus(data.status ?? "idle");
+      setPreviewLastUpdated(data.lastUpdated ?? null);
+      if (data.status === "running") {
+        setPreviewIframeKey((k) => k + 1);
+        setCenterTab("preview");
+      }
+    } catch {
+      // silent
+    }
+  }, [projectId]);
+
   const handleDownload = useCallback(() => {
     const doneFiles = files.filter((f) => f.content);
     if (doneFiles.length === 0) return;
@@ -158,6 +278,11 @@ export default function AgentApp() {
     setCurrentRound(null);
     setActiveProgress(null);
     setFileBuilderMinimized(false);
+    setPreviewStatus("idle");
+    setPreviewLogs([]);
+    setTerminalOpen(false);
+    setPreviewLastUpdated(null);
+    wasPreviewRunningRef.current = false;
   }, []);
 
   const loadProject = useCallback(async (project: DbProject) => {
@@ -392,6 +517,7 @@ export default function AgentApp() {
           appendBuildMessage(USER_MESSAGES.complete);
           loadProjects();
           refreshFiles(projectId);
+          syncPreviewIfRunning();
         },
       },
       buildAbortRef.current.signal
@@ -405,6 +531,7 @@ export default function AgentApp() {
     loadProjects,
     selectedFileId,
     appendBuildMessage,
+    syncPreviewIfRunning,
   ]);
 
   const handleMakeChanges = useCallback(() => {
@@ -492,10 +619,23 @@ export default function AgentApp() {
           onConfirm={handleConfirm}
           onMakeChanges={handleMakeChanges}
           onDownload={handleDownload}
+          onRunApp={handleRunApp}
+          isRunDisabled={phase !== "complete" || !projectId}
+          isPreviewRunning={isPreviewStarting || previewStatus === "installing" || previewStatus === "starting"}
           confirmDisabled={isLoading}
           isLoading={isLoading}
           onSubmit={handleSubmit}
           awaitingChanges={awaitingChanges}
+          previewStatus={previewStatus}
+          previewLastUpdated={previewLastUpdated}
+          previewIframeKey={previewIframeKey}
+          previewViewport={previewViewport}
+          previewLogs={previewLogs}
+          terminalOpen={terminalOpen}
+          onToggleTerminal={() => setTerminalOpen((v) => !v)}
+          onPreviewRefresh={handlePreviewRefresh}
+          onPreviewRetry={handlePreviewRetry}
+          onPreviewViewportChange={setPreviewViewport}
         />
 
         <FileBuilder
