@@ -704,15 +704,11 @@ export default function AgentApp() {
 
       <div className="flex min-h-0 flex-1">
         <Sidebar
-          projects={projects}
-          activeProjectId={projectId}
           mergedFiles={mergedFiles}
           selectedFileId={selectedFileId}
           activeFileId={activeFile?.id ?? null}
-          isLoading={projectsLoading}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
-          onSelectProject={loadProject}
           onNewProject={handleNewProject}
           onSelectFile={handleSelectFile}
         />

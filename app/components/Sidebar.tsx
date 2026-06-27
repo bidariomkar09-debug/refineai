@@ -1,53 +1,28 @@
 "use client";
 
-import type { DbProject } from "@/app/lib/agentTypes";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import FileExplorer from "./FileExplorer";
 
 type SidebarProps = {
-  projects: DbProject[];
-  activeProjectId: string | null;
   mergedFiles: ExplorerFile[];
   selectedFileId: string | null;
   activeFileId: string | null;
-  isLoading: boolean;
   isOpen: boolean;
   onClose: () => void;
-  onSelectProject: (project: DbProject) => void;
   onNewProject: () => void;
   onSelectFile: (file: ExplorerFile) => void;
 };
 
-const STATUS_BADGE: Record<string, string> = {
-  planning: "bg-yellow-500/20 text-yellow-400",
-  building: "bg-accent/20 text-accent",
-  complete: "bg-accent-green/20 text-accent-green",
-  error: "bg-red-500/20 text-red-400",
-  paused: "bg-gray-500/20 text-gray-400",
-};
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
-
 function SidebarContent({
-  projects,
-  activeProjectId,
   mergedFiles,
   selectedFileId,
   activeFileId,
-  isLoading,
   onClose,
-  onSelectProject,
   onNewProject,
   onSelectFile,
 }: Omit<SidebarProps, "isOpen">) {
   return (
     <div className="flex h-full flex-col">
-      {/* Top: logo + new project */}
       <div className="shrink-0 border-b border-surface-border px-3 py-3">
         <h1 className="text-base font-bold text-white">RefineAI</h1>
         <p className="mb-2 text-[10px] text-gray-500">AI Coding Agent</p>
@@ -63,8 +38,7 @@ function SidebarContent({
         </button>
       </div>
 
-      {/* Middle: file explorer */}
-      <div className="flex min-h-0 flex-1 flex-col border-b border-surface-border">
+      <div className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 px-3 py-1.5">
           <h2 className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
             Explorer
@@ -78,55 +52,6 @@ function SidebarContent({
             onSelectFile={onSelectFile}
           />
         </div>
-      </div>
-
-      {/* Bottom: past projects */}
-      <div className="flex max-h-[220px] shrink-0 flex-col">
-        <div className="shrink-0 border-b border-surface-border px-4 py-2">
-          <h2 className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-            Past Projects
-          </h2>
-        </div>
-        <nav className="min-h-0 flex-1 overflow-y-auto p-2">
-          {isLoading ? (
-            <p className="px-2 py-3 text-xs text-gray-500">Loading...</p>
-          ) : projects.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-gray-500">Your projects will appear here.</p>
-          ) : (
-            <ul className="space-y-1">
-              {projects.map((project) => (
-                <li key={project.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSelectProject(project);
-                      onClose();
-                    }}
-                    className={`w-full rounded-lg px-2.5 py-2 text-left transition ${
-                      activeProjectId === project.id
-                        ? "bg-accent/20 text-white"
-                        : "text-gray-300 hover:bg-surface-border/50"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-xs font-medium">{project.name}</span>
-                      <span
-                        className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium capitalize ${
-                          STATUS_BADGE[project.status] ?? STATUS_BADGE.planning
-                        }`}
-                      >
-                        {project.status}
-                      </span>
-                    </div>
-                    <span className="mt-0.5 block text-[10px] text-gray-500">
-                      {formatDate(project.created_at)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </nav>
       </div>
     </div>
   );
