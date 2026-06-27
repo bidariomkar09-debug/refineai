@@ -14,12 +14,26 @@ import {
   testConnection,
   type DbSession,
 } from "@/app/lib/db";
-import type { Iteration, LoopStatus, ViewMode } from "@/app/lib/types";
-import { TARGET_SCORE } from "@/app/lib/types";
+import {
+  DEFAULT_DEV_CONFIG,
+  getActiveConfig,
+  TARGET_SCORE,
+} from "@/app/lib/developerConfig";
+import { exportSessionAsJson } from "@/app/lib/exportSession";
+import { useDeveloperConfig } from "@/app/lib/useDeveloperConfig";
+import type {
+  ApiCallSnapshot,
+  Iteration,
+  LoopStats,
+  LoopStatus,
+  ViewMode,
+} from "@/app/lib/types";
 import Sidebar, { SidebarToggle } from "./Sidebar";
 import ChatArea from "./ChatArea";
 import InputBox from "./InputBox";
 import StatusBar from "./StatusBar";
+import ModeToggle from "./ModeToggle";
+import DeveloperPanel from "./DeveloperPanel";
 
 function getFinalOutputRound(iterations: Iteration[]): number | null {
   const lastOutputRound = [...iterations]
@@ -29,6 +43,11 @@ function getFinalOutputRound(iterations: Iteration[]): number | null {
 }
 
 export default function LoopApp() {
+  const { appMode, setAppMode, devConfig, updateDevConfig } = useDeveloperConfig();
+  const activeConfig = getActiveConfig(appMode, devConfig);
+  const scoreThreshold =
+    appMode === "simple" ? TARGET_SCORE : activeConfig.scoreThreshold;
+
   const [iterations, setIterations] = useState<Iteration[]>([]);
   const [status, setStatus] = useState<LoopStatus>("idle");
   const [score, setScore] = useState(0);
@@ -42,9 +61,14 @@ export default function LoopApp() {
   const [viewMode, setViewMode] = useState<ViewMode>("live");
   const [sessions, setSessions] = useState<DbSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [loopStats, setLoopStats] = useState<LoopStats | null>(null);
+  const [lastApiCall, setLastApiCall] = useState<ApiCallSnapshot | null>(null);
+  const [finalOutput, setFinalOutput] = useState("");
   const abortRef = useRef<AbortController | null>(null);
 
-  const isLoading = viewMode === "live" && ["generating", "critiquing", "refining"].includes(status);
+  const isLoading =
+    viewMode === "live" &&
+    ["generating", "critiquing", "refining"].includes(status);
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -84,110 +108,177 @@ export default function LoopApp() {
     setActiveRound(null);
     setError(null);
     setDbWarning(null);
+    setLoopStats(null);
+    setLastApiCall(null);
+    setFinalOutput("");
   }, []);
 
-  const handleSelectSession = useCallback(async (session: DbSession) => {
-    abortRef.current?.abort();
-    setViewMode("history");
-    setCurrentSessionId(session.id);
-    setTargetDescription(session.target);
-    setStatus("idle");
-    setError(null);
-    setDbWarning(null);
-
-    try {
-      const rounds = await getSessionRounds(session.id);
-      const loadedIterations = rounds.map(dbRoundToIteration);
-      setIterations(loadedIterations);
-
-      const lastScore = loadedIterations.at(-1)?.score ?? 0;
-      setScore(lastScore);
-
-      if (session.status === "completed" && lastScore >= TARGET_SCORE) {
-        setFinalRound(getFinalOutputRound(loadedIterations));
-      } else if (session.final_output) {
-        setFinalRound(getFinalOutputRound(loadedIterations));
-      } else {
-        setFinalRound(null);
-      }
-
-      setActiveRound(loadedIterations.at(-1)?.round ?? null);
-    } catch (err) {
-      setError(err instanceof DbError ? err.message : "Failed to load session");
-    }
-  }, []);
-
-  const handleSubmit = useCallback(async (target: string) => {
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
-
-    setViewMode("live");
-    setIterations([]);
-    setScore(0);
-    setError(null);
-    setDbWarning(null);
-    setTargetDescription(target);
-    setFinalRound(null);
-    setActiveRound(null);
-    setCurrentSessionId(null);
-    setStatus("generating");
-
-    let sessionId: string | null = null;
-
-    try {
-      await testConnection();
-      const session = await createSession(target);
-      sessionId = session.id;
+  const handleSelectSession = useCallback(
+    async (session: DbSession) => {
+      abortRef.current?.abort();
+      setViewMode("history");
       setCurrentSessionId(session.id);
-      await refreshSessions();
+      setTargetDescription(session.target);
+      setStatus("idle");
+      setError(null);
+      setDbWarning(null);
+      setLoopStats(null);
+      setLastApiCall(null);
 
-      const result = await runLoop(
-        target,
-        {
-          onStatus: setStatus,
-          onIteration: (iteration) => {
-            setIterations((prev) => [...prev, iteration]);
-            setActiveRound(iteration.round);
+      try {
+        const rounds = await getSessionRounds(session.id);
+        const loadedIterations = rounds.map(dbRoundToIteration);
+        setIterations(loadedIterations);
 
-            if (sessionId) {
-              saveRound(sessionId, iteration).catch((err) => {
-                console.error("Failed to save round:", err);
-                setDbWarning("Some rounds may not have been saved to the database.");
-              });
-            }
-          },
-          onScore: setScore,
-        },
-        abortRef.current.signal
-      );
+        const lastScore = loadedIterations.at(-1)?.score ?? 0;
+        setScore(lastScore);
 
-      if (sessionId) {
-        if (result.reason === "stopped") {
-          await stopSession(sessionId, result.finalOutput);
+        const threshold = session.score_threshold ?? TARGET_SCORE;
+        if (session.status === "completed" && lastScore >= threshold) {
+          setFinalRound(getFinalOutputRound(loadedIterations));
+        } else if (session.final_output) {
+          setFinalRound(getFinalOutputRound(loadedIterations));
         } else {
-          await completeSession(sessionId, result.finalOutput);
+          setFinalRound(null);
         }
-        await refreshSessions();
-      }
 
-      if (result.reason === "target_met" && result.score >= TARGET_SCORE) {
-        setFinalRound(getFinalOutputRound(result.iterations));
-      } else if (result.reason === "max_rounds") {
-        setFinalRound(getFinalOutputRound(result.iterations));
+        setFinalOutput(session.final_output ?? "");
+        setActiveRound(loadedIterations.at(-1)?.round ?? null);
+
+        if (session.tokens_used) {
+          setLoopStats({
+            totalRounds: loadedIterations.length,
+            totalTokens: session.tokens_used,
+            avgScoreDelta: 0,
+            timeTakenSec: session.time_taken ?? 0,
+            model: session.model ?? "gpt-4o",
+          });
+        }
+      } catch (err) {
+        setError(
+          err instanceof DbError ? err.message : "Failed to load session"
+        );
       }
-    } catch (err) {
-      if (err instanceof LoopApiError) {
-        setError(err.message);
-      } else if (err instanceof DbError) {
-        setError(err.message);
-        setStatus("error");
-      } else if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("An unexpected error occurred");
+    },
+    []
+  );
+
+  const handleExport = useCallback(() => {
+    exportSessionAsJson({
+      target: targetDescription,
+      iterations,
+      finalOutput,
+      score,
+      stats: loopStats,
+      config: activeConfig,
+      sessionId: currentSessionId,
+    });
+  }, [
+    targetDescription,
+    iterations,
+    finalOutput,
+    score,
+    loopStats,
+    activeConfig,
+    currentSessionId,
+  ]);
+
+  const handleSubmit = useCallback(
+    async (target: string) => {
+      abortRef.current?.abort();
+      abortRef.current = new AbortController();
+
+      const config = getActiveConfig(appMode, devConfig);
+
+      setViewMode("live");
+      setIterations([]);
+      setScore(0);
+      setError(null);
+      setDbWarning(null);
+      setTargetDescription(target);
+      setFinalRound(null);
+      setActiveRound(null);
+      setCurrentSessionId(null);
+      setLoopStats(null);
+      setLastApiCall(null);
+      setFinalOutput("");
+      setStatus("generating");
+
+      let sessionId: string | null = null;
+
+      try {
+        await testConnection();
+        const session = await createSession(target, config);
+        sessionId = session.id;
+        setCurrentSessionId(session.id);
+        await refreshSessions();
+
+        const result = await runLoop(
+          target,
+          {
+            onStatus: setStatus,
+            onIteration: (iteration) => {
+              setIterations((prev) => [...prev, iteration]);
+              setActiveRound(iteration.round);
+              if (iteration.apiCall) {
+                setLastApiCall(iteration.apiCall);
+              }
+
+              if (sessionId) {
+                saveRound(sessionId, iteration).catch((err) => {
+                  console.error("Failed to save round:", err);
+                  setDbWarning(
+                    "Some rounds may not have been saved to the database."
+                  );
+                });
+              }
+            },
+            onScore: setScore,
+            onApiCall: setLastApiCall,
+          },
+          abortRef.current.signal,
+          { config }
+        );
+
+        setLoopStats(result.stats);
+        setFinalOutput(result.finalOutput);
+
+        if (sessionId) {
+          if (result.reason === "stopped") {
+            await stopSession(sessionId, result.finalOutput, result.stats);
+          } else {
+            await completeSession(
+              sessionId,
+              result.finalOutput,
+              result.stats
+            );
+          }
+          await refreshSessions();
+        }
+
+        if (
+          result.reason === "target_met" &&
+          result.score >= config.scoreThreshold
+        ) {
+          setFinalRound(getFinalOutputRound(result.iterations));
+        } else if (result.reason === "max_rounds") {
+          setFinalRound(getFinalOutputRound(result.iterations));
+        }
+      } catch (err) {
+        if (err instanceof LoopApiError) {
+          setError(err.message);
+        } else if (err instanceof DbError) {
+          setError(err.message);
+          setStatus("error");
+        } else if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError("An unexpected error occurred");
+        }
       }
-    }
-  }, [refreshSessions]);
+    },
+    [appMode, devConfig, refreshSessions]
+  );
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-surface">
@@ -204,8 +295,11 @@ export default function LoopApp() {
             </p>
           </div>
         </div>
-        <div className="hidden text-xs text-gray-500 md:block">
-          Target: {TARGET_SCORE}%+ quality
+        <div className="flex items-center gap-3">
+          <div className="hidden text-xs text-gray-500 md:block">
+            Target: {scoreThreshold}%+ quality
+          </div>
+          <ModeToggle mode={appMode} onChange={setAppMode} />
         </div>
       </header>
 
@@ -237,8 +331,18 @@ export default function LoopApp() {
               className="ml-auto shrink-0 text-red-400 hover:text-red-300"
               aria-label="Dismiss error"
             >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
@@ -276,6 +380,7 @@ export default function LoopApp() {
           <StatusBar
             status={viewMode === "history" ? "idle" : status}
             score={score}
+            scoreThreshold={scoreThreshold}
             onStop={handleStop}
           />
           <ChatArea
@@ -284,6 +389,8 @@ export default function LoopApp() {
             finalRound={finalRound}
             targetDescription={targetDescription}
             viewMode={viewMode}
+            scoreThreshold={scoreThreshold}
+            jsonMode={appMode === "developer" && activeConfig.jsonMode}
           />
           <InputBox
             onSubmit={handleSubmit}
@@ -291,6 +398,18 @@ export default function LoopApp() {
             isLoading={isLoading}
           />
         </main>
+
+        {appMode === "developer" && (
+          <DeveloperPanel
+            config={devConfig}
+            onConfigChange={updateDevConfig}
+            iterations={iterations}
+            loopStats={loopStats}
+            lastApiCall={lastApiCall}
+            onExport={handleExport}
+            disabled={isLoading}
+          />
+        )}
       </div>
     </div>
   );

@@ -1,12 +1,13 @@
-import {
-  MAX_ROUNDS,
-  TARGET_SCORE,
-  type Iteration,
-  type LoopResult,
-  type LoopStatus,
-  type LoopTask,
-  taskToStatus,
+import type { DeveloperConfig } from "./developerConfig";
+import type {
+  ApiCallSnapshot,
+  Iteration,
+  LoopResult,
+  LoopStats,
+  LoopStatus,
+  LoopTask,
 } from "./types";
+import { taskToStatus } from "./types";
 
 export class LoopAbortedError extends Error {
   constructor() {
@@ -26,6 +27,7 @@ type LoopCallbacks = {
   onStatus: (status: LoopStatus) => void;
   onIteration: (iteration: Iteration) => void;
   onScore: (score: number) => void;
+  onApiCall?: (snapshot: ApiCallSnapshot) => void;
 };
 
 type ApiResponse = {
@@ -34,8 +36,37 @@ type ApiResponse = {
   score: number;
   round: number;
   task: LoopTask;
+  rawContent?: string;
+  usage?: { total_tokens: number };
+  apiSnapshot?: ApiCallSnapshot;
   error?: string;
 };
+
+export type LoopOptions = {
+  config: DeveloperConfig;
+};
+
+function computeStats(
+  iterations: Iteration[],
+  totalTokens: number,
+  timeTakenSec: number,
+  model: string
+): LoopStats {
+  let scoreDeltaSum = 0;
+  for (let i = 1; i < iterations.length; i++) {
+    scoreDeltaSum += iterations[i].score - iterations[i - 1].score;
+  }
+  const avgScoreDelta =
+    iterations.length > 1 ? scoreDeltaSum / (iterations.length - 1) : 0;
+
+  return {
+    totalRounds: iterations.length,
+    totalTokens,
+    avgScoreDelta: Math.round(avgScoreDelta * 10) / 10,
+    timeTakenSec: Math.round(timeTakenSec * 10) / 10,
+    model,
+  };
+}
 
 async function callApi(
   params: {
@@ -44,6 +75,7 @@ async function callApi(
     lastCritique?: string;
     round: number;
     task: LoopTask;
+    config: DeveloperConfig;
   },
   signal: AbortSignal
 ): Promise<ApiResponse> {
@@ -52,7 +84,17 @@ async function callApi(
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
+    body: JSON.stringify({
+      target: params.target,
+      round: params.round,
+      task: params.task,
+      currentOutput: params.currentOutput,
+      lastCritique: params.lastCritique,
+      systemPrompt: params.config.systemPrompt,
+      model: params.config.model,
+      temperature: params.config.temperature,
+      jsonMode: params.config.jsonMode,
+    }),
     signal,
   });
 
@@ -65,16 +107,42 @@ async function callApi(
   return data;
 }
 
+function buildLoopResult(
+  iterations: Iteration[],
+  currentOutput: string,
+  score: number,
+  reason: LoopResult["reason"],
+  totalTokens: number,
+  startTime: number,
+  model: string
+): LoopResult {
+  const timeTakenSec = (Date.now() - startTime) / 1000;
+  return {
+    iterations,
+    finalOutput: currentOutput,
+    score,
+    reason,
+    stats: computeStats(iterations, totalTokens, timeTakenSec, model),
+  };
+}
+
 export async function runLoop(
   target: string,
   callbacks: LoopCallbacks,
-  abortSignal: AbortSignal
+  abortSignal: AbortSignal,
+  options: LoopOptions
 ): Promise<LoopResult> {
+  const { config } = options;
+  const scoreThreshold = config.scoreThreshold;
+  const maxRounds = config.maxRounds;
+
   const iterations: Iteration[] = [];
   let currentOutput = "";
   let lastCritique = "";
   let score = 0;
   let round = 1;
+  let totalTokens = 0;
+  const startTime = Date.now();
 
   const runTask = async (task: LoopTask): Promise<ApiResponse> => {
     callbacks.onStatus(taskToStatus(task));
@@ -84,6 +152,7 @@ export async function runLoop(
         target,
         round,
         task,
+        config,
         ...(currentOutput ? { currentOutput } : {}),
         ...(lastCritique && task !== "generate"
           ? { lastCritique }
@@ -97,11 +166,22 @@ export async function runLoop(
         ? (result.critique ?? "")
         : (result.output ?? "");
 
+    if (result.usage?.total_tokens) {
+      totalTokens += result.usage.total_tokens;
+    }
+
+    if (result.apiSnapshot) {
+      callbacks.onApiCall?.(result.apiSnapshot);
+    }
+
     const iteration: Iteration = {
       round,
       task,
       content,
       score: result.score,
+      rawJson: config.jsonMode ? result.rawContent : undefined,
+      apiCall: result.apiSnapshot,
+      tokensUsed: result.usage?.total_tokens,
     };
 
     iterations.push(iteration);
@@ -119,50 +199,55 @@ export async function runLoop(
   };
 
   try {
-    // Round 1: Generate
     await runTask("generate");
-    if (score >= TARGET_SCORE) {
+    if (score >= scoreThreshold) {
       callbacks.onStatus("complete");
-      return {
+      return buildLoopResult(
         iterations,
-        finalOutput: currentOutput,
+        currentOutput,
         score,
-        reason: "target_met",
-      };
+        "target_met",
+        totalTokens,
+        startTime,
+        config.model
+      );
     }
 
     round = 2;
 
-    while (round <= MAX_ROUNDS) {
+    while (round <= maxRounds) {
       if (abortSignal.aborted) throw new LoopAbortedError();
 
-      // Critique
       await runTask("critique");
-      if (score >= TARGET_SCORE) {
+      if (score >= scoreThreshold) {
         callbacks.onStatus("complete");
-        return {
+        return buildLoopResult(
           iterations,
-          finalOutput: currentOutput,
+          currentOutput,
           score,
-          reason: "target_met",
-        };
+          "target_met",
+          totalTokens,
+          startTime,
+          config.model
+        );
       }
 
       if (abortSignal.aborted) throw new LoopAbortedError();
-      if (round >= MAX_ROUNDS) break;
+      if (round >= maxRounds) break;
 
       round++;
-
-      // Refine
       await runTask("refine");
-      if (score >= TARGET_SCORE) {
+      if (score >= scoreThreshold) {
         callbacks.onStatus("complete");
-        return {
+        return buildLoopResult(
           iterations,
-          finalOutput: currentOutput,
+          currentOutput,
           score,
-          reason: "target_met",
-        };
+          "target_met",
+          totalTokens,
+          startTime,
+          config.model
+        );
       }
 
       if (abortSignal.aborted) throw new LoopAbortedError();
@@ -170,21 +255,29 @@ export async function runLoop(
     }
 
     callbacks.onStatus("complete");
-    return {
+    return buildLoopResult(
       iterations,
-      finalOutput: currentOutput,
+      currentOutput,
       score,
-      reason: "max_rounds",
-    };
+      "max_rounds",
+      totalTokens,
+      startTime,
+      config.model
+    );
   } catch (error) {
+    const partial = buildLoopResult(
+      iterations,
+      currentOutput,
+      score,
+      "stopped",
+      totalTokens,
+      startTime,
+      config.model
+    );
+
     if (error instanceof LoopAbortedError) {
       callbacks.onStatus("stopped");
-      return {
-        iterations,
-        finalOutput: currentOutput,
-        score,
-        reason: "stopped",
-      };
+      return { ...partial, reason: "stopped" };
     }
 
     if (error instanceof LoopApiError) {
@@ -194,12 +287,7 @@ export async function runLoop(
 
     if (error instanceof DOMException && error.name === "AbortError") {
       callbacks.onStatus("stopped");
-      return {
-        iterations,
-        finalOutput: currentOutput,
-        score,
-        reason: "stopped",
-      };
+      return { ...partial, reason: "stopped" };
     }
 
     callbacks.onStatus("error");

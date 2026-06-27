@@ -1,11 +1,12 @@
 "use client";
 
 import type { LoopStatus } from "@/app/lib/types";
-import { STATUS_LABELS, TARGET_SCORE } from "@/app/lib/types";
+import { STATUS_LABELS } from "@/app/lib/types";
 
 type StatusBarProps = {
   status: LoopStatus;
   score: number;
+  scoreThreshold: number;
   onStop: () => void;
 };
 
@@ -15,14 +16,19 @@ const ACTIVE_STATUSES: LoopStatus[] = [
   "refining",
 ];
 
-function getScoreColor(score: number): string {
-  if (score >= TARGET_SCORE) return "from-accent-green to-emerald-400";
+function getScoreColor(score: number, threshold: number): string {
+  if (score >= threshold) return "from-accent-green to-emerald-400";
   if (score >= 70) return "from-yellow-500 to-yellow-400";
   if (score >= 40) return "from-orange-500 to-yellow-500";
   return "from-red-500 to-orange-500";
 }
 
-export default function StatusBar({ status, score, onStop }: StatusBarProps) {
+export default function StatusBar({
+  status,
+  score,
+  scoreThreshold,
+  onStop,
+}: StatusBarProps) {
   const isActive = ACTIVE_STATUSES.includes(status);
   const canStop = isActive;
 
@@ -59,7 +65,7 @@ export default function StatusBar({ status, score, onStop }: StatusBarProps) {
               <span className="text-gray-500">Quality Score</span>
               <span
                 className={`font-bold tabular-nums ${
-                  score >= TARGET_SCORE
+                  score >= scoreThreshold
                     ? "text-accent-green"
                     : score >= 70
                       ? "text-yellow-400"
@@ -71,7 +77,7 @@ export default function StatusBar({ status, score, onStop }: StatusBarProps) {
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-gray-800">
               <div
-                className={`h-full rounded-full bg-gradient-to-r motion-safe:transition-all motion-safe:duration-700 ease-out ${getScoreColor(score)}`}
+                className={`h-full rounded-full bg-gradient-to-r motion-safe:transition-all motion-safe:duration-700 ease-out ${getScoreColor(score, scoreThreshold)}`}
                 style={{ width: `${Math.min(100, score)}%` }}
               />
             </div>

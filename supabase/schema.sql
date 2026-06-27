@@ -8,7 +8,15 @@ CREATE TABLE IF NOT EXISTS sessions (
   status TEXT NOT NULL DEFAULT 'running'
     CHECK (status IN ('running', 'completed', 'stopped')),
   final_output TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  model TEXT DEFAULT 'gpt-4o',
+  temperature REAL DEFAULT 0.7,
+  score_threshold INTEGER DEFAULT 90,
+  max_rounds INTEGER DEFAULT 12,
+  system_prompt TEXT,
+  json_mode BOOLEAN DEFAULT false,
+  tokens_used INTEGER DEFAULT 0,
+  time_taken REAL DEFAULT 0
 );
 
 -- Rounds table

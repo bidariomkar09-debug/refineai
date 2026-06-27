@@ -3,7 +3,6 @@
 import { useEffect, useRef } from "react";
 import type { Iteration, LoopStatus, ViewMode } from "@/app/lib/types";
 import OutputCard from "./OutputCard";
-import { TARGET_SCORE } from "@/app/lib/types";
 
 type ChatAreaProps = {
   iterations: Iteration[];
@@ -11,6 +10,8 @@ type ChatAreaProps = {
   finalRound: number | null;
   targetDescription: string;
   viewMode: ViewMode;
+  scoreThreshold: number;
+  jsonMode: boolean;
 };
 
 const ACTIVE_STATUSES: LoopStatus[] = [
@@ -25,6 +26,8 @@ export default function ChatArea({
   finalRound,
   targetDescription,
   viewMode,
+  scoreThreshold,
+  jsonMode,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const isActive = viewMode === "live" && ACTIVE_STATUSES.includes(status);
@@ -62,7 +65,7 @@ export default function ChatArea({
             <h2 className="text-lg font-semibold text-white">RefineAI</h2>
             <p className="mt-2 max-w-md text-sm text-gray-400">
               Describe your target output below. The AI will generate, critique,
-              and refine in a loop until quality reaches {TARGET_SCORE}%+.
+              and refine in a loop until quality reaches {scoreThreshold}%+.
             </p>
           </div>
         ) : (
@@ -80,6 +83,8 @@ export default function ChatArea({
                 key={iteration.round}
                 iteration={iteration}
                 isFinal={finalRound === iteration.round}
+                scoreThreshold={scoreThreshold}
+                jsonMode={jsonMode}
               />
             ))}
             {isActive && (

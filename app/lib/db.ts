@@ -1,5 +1,6 @@
 import { getSupabaseClient, SupabaseConfigError } from "./supabaseClient";
-import type { Iteration, LoopTask } from "./types";
+import type { DeveloperConfig } from "./developerConfig";
+import type { Iteration, LoopStats, LoopTask } from "./types";
 
 export type DbSession = {
   id: string;
@@ -7,6 +8,14 @@ export type DbSession = {
   status: "running" | "completed" | "stopped";
   final_output: string | null;
   created_at: string;
+  model?: string | null;
+  temperature?: number | null;
+  score_threshold?: number | null;
+  max_rounds?: number | null;
+  system_prompt?: string | null;
+  json_mode?: boolean | null;
+  tokens_used?: number | null;
+  time_taken?: number | null;
 };
 
 export type DbRound = {
@@ -65,11 +74,23 @@ export async function testConnection(): Promise<void> {
   }
 }
 
-export async function createSession(target: string): Promise<DbSession> {
+export async function createSession(
+  target: string,
+  config: DeveloperConfig
+): Promise<DbSession> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("sessions")
-    .insert({ target, status: "running" })
+    .insert({
+      target,
+      status: "running",
+      model: config.model,
+      temperature: config.temperature,
+      score_threshold: config.scoreThreshold,
+      max_rounds: config.maxRounds,
+      system_prompt: config.systemPrompt,
+      json_mode: config.jsonMode,
+    })
     .select()
     .single();
 
@@ -118,12 +139,18 @@ export async function saveRound(
 
 export async function completeSession(
   sessionId: string,
-  finalOutput: string
+  finalOutput: string,
+  stats?: LoopStats
 ): Promise<void> {
   const supabase = getSupabaseClient();
   const { error } = await supabase
     .from("sessions")
-    .update({ status: "completed", final_output: finalOutput })
+    .update({
+      status: "completed",
+      final_output: finalOutput,
+      tokens_used: stats?.totalTokens ?? 0,
+      time_taken: stats?.timeTakenSec ?? 0,
+    })
     .eq("id", sessionId);
 
   if (error) {
@@ -133,12 +160,18 @@ export async function completeSession(
 
 export async function stopSession(
   sessionId: string,
-  finalOutput: string
+  finalOutput: string,
+  stats?: LoopStats
 ): Promise<void> {
   const supabase = getSupabaseClient();
   const { error } = await supabase
     .from("sessions")
-    .update({ status: "stopped", final_output: finalOutput })
+    .update({
+      status: "stopped",
+      final_output: finalOutput,
+      tokens_used: stats?.totalTokens ?? 0,
+      time_taken: stats?.timeTakenSec ?? 0,
+    })
     .eq("id", sessionId);
 
   if (error) {

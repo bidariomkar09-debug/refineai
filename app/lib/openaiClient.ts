@@ -1,13 +1,15 @@
 import OpenAI from "openai";
-import type { LoopTask, LoopTaskResult } from "./types";
+import type { DeveloperConfig } from "./developerConfig";
+import type { ApiCallSnapshot, LoopTask, LoopTaskResult, TokenUsage } from "./types";
 
-const SYSTEM_PROMPT = `You are a loop refining AI. Your job is to generate, critique, and refine your output until it perfectly matches the user's target description. After each round score yourself from 0-100. Stop when you hit 90+.
-
+const JSON_SCHEMA_INSTRUCTION = `
 Always respond with valid JSON only, no markdown fences. Use this exact schema:
-- For "generate" and "refine" tasks: { "output": "<your content>", "score": <0-100> }
-- For "critique" task: { "critique": "<what is missing or wrong>", "score": <0-100> }
+- For "generate" and "refine" tasks: { "output": "<your content>", "score": <0-100>, "round": <N>, "critique": "<optional note>" }
+- For "critique" task: { "critique": "<what is missing or wrong>", "score": <0-100>, "round": <N> }`;
 
-Score honestly based on how well the current output matches the target. Be critical during critique rounds.`;
+const TEXT_SCORE_INSTRUCTION = `
+End your response with a line exactly like: SCORE: [0-100]
+Put your main content before that line. Score honestly based on how well the output matches the target.`;
 
 export class OpenAIClientError extends Error {
   constructor(
@@ -58,13 +60,35 @@ function buildUserMessage(params: {
   return lines.join("\n");
 }
 
+function buildSystemPrompt(
+  basePrompt: string,
+  jsonMode: boolean,
+  task: LoopTask
+): string {
+  if (jsonMode) {
+    return `${basePrompt}\n${JSON_SCHEMA_INSTRUCTION}\nCurrent task: ${task}`;
+  }
+  return `${basePrompt}\n${TEXT_SCORE_INSTRUCTION}\nCurrent task: ${task}`;
+}
+
 function clampScore(score: unknown): number {
   const num = typeof score === "number" ? score : Number(score);
   if (Number.isNaN(num)) return 0;
   return Math.min(100, Math.max(0, Math.round(num)));
 }
 
-function parseLoopResult(raw: string, task: LoopTask): LoopTaskResult {
+function parseTextResult(raw: string, task: LoopTask): LoopTaskResult {
+  const scoreMatch = raw.match(/SCORE:\s*(\d+)/i);
+  const score = scoreMatch ? clampScore(scoreMatch[1]) : 0;
+  const content = raw.replace(/\n?SCORE:\s*\d+\s*$/i, "").trim();
+
+  if (task === "critique") {
+    return { critique: content, score };
+  }
+  return { output: content, score };
+}
+
+function parseJsonResult(raw: string, task: LoopTask): LoopTaskResult {
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(raw);
@@ -78,12 +102,9 @@ function parseLoopResult(raw: string, task: LoopTask): LoopTaskResult {
     const critique =
       typeof parsed.critique === "string" ? parsed.critique.trim() : "";
     if (!critique) {
-      throw new OpenAIClientError(
-        "AI response missing critique field",
-        502
-      );
+      throw new OpenAIClientError("AI response missing critique field", 502);
     }
-    return { critique, score };
+    return { critique, score, rawContent: raw };
   }
 
   const output =
@@ -91,7 +112,7 @@ function parseLoopResult(raw: string, task: LoopTask): LoopTaskResult {
   if (!output) {
     throw new OpenAIClientError("AI response missing output field", 502);
   }
-  return { output, score };
+  return { output, score, rawContent: raw };
 }
 
 export type CallLoopTaskParams = {
@@ -100,23 +121,52 @@ export type CallLoopTaskParams = {
   lastCritique?: string;
   round: number;
   task: LoopTask;
+  systemPrompt: string;
+  model: string;
+  temperature: number;
+  jsonMode: boolean;
+};
+
+export type CallLoopTaskResult = LoopTaskResult & {
+  usage: TokenUsage;
+  apiSnapshot: ApiCallSnapshot;
 };
 
 export async function callLoopTask(
   params: CallLoopTaskParams
-): Promise<LoopTaskResult> {
+): Promise<CallLoopTaskResult> {
   const client = getClient();
-  const model = process.env.OPENAI_MODEL ?? "gpt-4o";
+  const userMessage = buildUserMessage(params);
+  const systemContent = buildSystemPrompt(
+    params.systemPrompt,
+    params.jsonMode,
+    params.task
+  );
+
+  const messages = [
+    { role: "system" as const, content: systemContent },
+    { role: "user" as const, content: userMessage },
+  ];
+
+  const apiSnapshot: ApiCallSnapshot = {
+    model: params.model,
+    temperature: params.temperature,
+    systemPrompt: systemContent,
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    jsonMode: params.jsonMode,
+    round: params.round,
+    task: params.task,
+  };
 
   try {
     const response = await client.chat.completions.create({
-      model,
+      model: params.model,
+      temperature: params.temperature,
       max_tokens: 2048,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserMessage(params) },
-      ],
+      ...(params.jsonMode
+        ? { response_format: { type: "json_object" as const } }
+        : {}),
+      messages,
     });
 
     const content = response.choices[0]?.message?.content;
@@ -124,7 +174,22 @@ export async function callLoopTask(
       throw new OpenAIClientError("Empty response from OpenAI", 502);
     }
 
-    return parseLoopResult(content, params.task);
+    const parsed = params.jsonMode
+      ? parseJsonResult(content, params.task)
+      : parseTextResult(content, params.task);
+
+    const usage: TokenUsage = {
+      prompt_tokens: response.usage?.prompt_tokens ?? 0,
+      completion_tokens: response.usage?.completion_tokens ?? 0,
+      total_tokens: response.usage?.total_tokens ?? 0,
+    };
+
+    return {
+      ...parsed,
+      rawContent: content,
+      usage,
+      apiSnapshot,
+    };
   } catch (error) {
     if (error instanceof OpenAIClientError) throw error;
 
@@ -140,4 +205,16 @@ export async function callLoopTask(
       500
     );
   }
+}
+
+export function configFromDevConfig(config: DeveloperConfig): Pick<
+  CallLoopTaskParams,
+  "systemPrompt" | "model" | "temperature" | "jsonMode"
+> {
+  return {
+    systemPrompt: config.systemPrompt,
+    model: config.model,
+    temperature: config.temperature,
+    jsonMode: config.jsonMode,
+  };
 }

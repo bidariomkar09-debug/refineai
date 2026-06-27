@@ -7,14 +7,34 @@ import { TASK_LABELS } from "@/app/lib/types";
 type OutputCardProps = {
   iteration: Iteration;
   isFinal: boolean;
+  scoreThreshold: number;
+  jsonMode: boolean;
 };
 
-export default function OutputCard({ iteration, isFinal }: OutputCardProps) {
+function formatJsonDisplay(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+export default function OutputCard({
+  iteration,
+  isFinal,
+  scoreThreshold,
+  jsonMode,
+}: OutputCardProps) {
   const [copied, setCopied] = useState(false);
+
+  const displayContent =
+    jsonMode && iteration.rawJson
+      ? formatJsonDisplay(iteration.rawJson)
+      : iteration.content;
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(iteration.content);
+      await navigator.clipboard.writeText(displayContent);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -22,7 +42,7 @@ export default function OutputCard({ iteration, isFinal }: OutputCardProps) {
     }
   };
 
-  const isApproved = isFinal && iteration.score >= 90;
+  const isApproved = isFinal && iteration.score >= scoreThreshold;
 
   return (
     <div
@@ -50,7 +70,7 @@ export default function OutputCard({ iteration, isFinal }: OutputCardProps) {
         <div className="flex items-center gap-2">
           <span
             className={`text-sm font-bold tabular-nums ${
-              iteration.score >= 90
+              iteration.score >= scoreThreshold
                 ? "text-accent-green"
                 : iteration.score >= 70
                   ? "text-yellow-400"
@@ -70,8 +90,12 @@ export default function OutputCard({ iteration, isFinal }: OutputCardProps) {
           )}
         </div>
       </div>
-      <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-gray-200">
-        {iteration.content}
+      <pre
+        className={`whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-gray-200 ${
+          jsonMode && iteration.rawJson ? "font-mono text-xs" : ""
+        }`}
+      >
+        {displayContent}
       </pre>
     </div>
   );
