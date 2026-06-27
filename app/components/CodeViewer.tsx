@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import type { DbFile, FileRoundEvent } from "@/app/lib/agentTypes";
+import { meetsQualityThreshold } from "@/app/lib/agentTypes";
 import CodeBlock, { detectLanguage } from "./CodeBlock";
 
 type CodeViewerProps = {
@@ -88,7 +89,9 @@ export default function CodeViewer({
             Score{" "}
             <span
               className={`font-semibold ${
-                displayScore >= 90 ? "text-accent-green" : "text-gray-300"
+                displayScore > 0 && meetsQualityThreshold(displayScore)
+                  ? "text-accent-green"
+                  : "text-gray-300"
               }`}
             >
               {displayScore > 0 ? `${displayScore}%` : "—"}

@@ -81,7 +81,7 @@ export async function callFileTask(params: {
   round: number;
 }): Promise<FileTaskResult & { tokens: number }> {
   const system = `You are RefineAI, an expert software engineer. ${FILE_TASK_SCHEMA}
-Score honestly: 90+ means production-ready code with no bugs.
+Score honestly: 95+ means production-ready code with no bugs.
 Output ONLY the file content in "code" field — no markdown fences inside the code string.`;
 
   const userParts = [

@@ -10,7 +10,8 @@ import type {
   ProjectPlan,
 } from "@/app/lib/agentTypes";
 import { fetchStream } from "@/app/lib/streamClient";
-import { startBuild, type OrchestratorControls } from "@/app/lib/buildOrchestrator";
+import { meetsQualityThreshold } from "@/app/lib/agentTypes";
+import { startBuild, runQualityPass, type OrchestratorControls } from "@/app/lib/buildOrchestrator";
 import {
   mergeProjectFiles,
   syncFileIntoList,
@@ -320,9 +321,62 @@ export default function AgentApp() {
       setCenterTab("chat");
 
       if (project.status === "complete") {
-        setPhase("complete");
-        setSummaryPlan(loadedPlan);
-        setShowConfirm(false);
+        const needsQuality = loadedFiles.some(
+          (f) => f.status === "done" && !meetsQualityThreshold(f.score)
+        );
+
+        if (needsQuality) {
+          setPhase("building");
+          setShowConfirm(false);
+          setSummaryPlan(null);
+          setStatusMessage(USER_MESSAGES.fixing);
+          setFileBuilderOpen(true);
+          setIsLoading(false);
+
+          buildAbortRef.current = new AbortController();
+          await runQualityPass(
+            project.id,
+            {
+              onStatus: setStatusMessage,
+              onFileStart: (file) => {
+                activeFileIdRef.current = file.id;
+                setActiveFile(file);
+                setCurrentCode("");
+                setCurrentRound(null);
+                setActiveProgress({ fileName: file.file_name, round: null });
+                setFiles((prev) =>
+                  syncFileIntoList(prev, { ...file, status: "building" })
+                );
+              },
+              onRound: (fileId, event) => {
+                const round = event.data;
+                setCurrentRound(round);
+                if (round.code) setCurrentCode(round.code);
+                setActiveProgress((prev) =>
+                  prev ? { ...prev, round } : null
+                );
+              },
+              onFileComplete: (fileId, score) => {
+                activeFileIdRef.current = null;
+                setFiles((prev) =>
+                  updateFileInList(prev, fileId, { status: "done", score })
+                );
+              },
+            },
+            buildAbortRef.current.signal
+          );
+
+          await refreshFiles(project.id);
+          setPhase("complete");
+          setSummaryPlan(loadedPlan);
+          setStatusMessage("");
+          setActiveProgress(null);
+          setActiveFile(null);
+        } else {
+          setPhase("complete");
+          setSummaryPlan(loadedPlan);
+          setShowConfirm(false);
+        }
       } else if (project.status === "building") {
         setPhase("building");
         setShowConfirm(false);
@@ -335,7 +389,7 @@ export default function AgentApp() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [refreshFiles]);
 
   const handlePlanIdea = useCallback(
     async (idea: string) => {

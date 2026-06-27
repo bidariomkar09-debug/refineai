@@ -1,6 +1,7 @@
 "use client";
 
 import type { FileStatus, ProjectPlan } from "@/app/lib/agentTypes";
+import { meetsQualityThreshold } from "@/app/lib/agentTypes";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 
 type PlanCardProps = {
@@ -10,7 +11,7 @@ type PlanCardProps = {
 
 function statusDot(status: FileStatus, score: number) {
   if (status === "building") return "bg-accent motion-safe:animate-pulse";
-  if (status === "done" && score >= 90) return "bg-accent-green";
+  if (status === "done" && meetsQualityThreshold(score)) return "bg-accent-green";
   if (status === "error") return "bg-red-400";
   if (status === "skipped") return "bg-gray-600";
   return "bg-gray-500";

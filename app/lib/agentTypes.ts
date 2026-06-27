@@ -121,8 +121,13 @@ export type BuildCompleteEvent = {
   roundsTaken: number;
 };
 
-export const FILE_SCORE_THRESHOLD = 90;
+export const FILE_SCORE_THRESHOLD = 95;
 export const FILE_MAX_ROUNDS = 8;
+export const FILE_ABSOLUTE_MAX_ROUNDS = 24;
+
+export function meetsQualityThreshold(score: number): boolean {
+  return score >= FILE_SCORE_THRESHOLD;
+}
 
 export type SSEEvent =
   | { type: "status"; message: string }

@@ -1,6 +1,8 @@
 "use client";
 
 import type { DbFile, ProjectPlan } from "@/app/lib/agentTypes";
+import { meetsQualityThreshold } from "@/app/lib/agentTypes";
+import { USER_MESSAGES } from "@/app/lib/userMessages";
 
 type SummaryCardProps = {
   plan: ProjectPlan;
@@ -19,7 +21,10 @@ export default function SummaryCard({
   isRunning,
   runDisabled,
 }: SummaryCardProps) {
-  const doneCount = files.filter((f) => f.status === "done").length;
+  const doneFiles = files
+    .filter((f) => f.status === "done")
+    .sort((a, b) => a.file_path.localeCompare(b.file_path));
+  const doneCount = doneFiles.length;
 
   return (
     <div className="space-y-4 rounded-xl border border-accent-green/30 bg-accent-green/5 p-4 text-sm">
@@ -28,10 +33,39 @@ export default function SummaryCard({
         <div>
           <h3 className="font-bold text-white">Your project is ready!</h3>
           <p className="text-xs text-gray-400">
-            {doneCount} of {files.length} files complete
+            {doneCount} of {files.length} files complete · {USER_MESSAGES.qualityTarget}
           </p>
         </div>
       </div>
+
+      {doneFiles.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+            Final file scores
+          </p>
+          <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg bg-black/20 p-2">
+            {doneFiles.map((file) => (
+              <li
+                key={file.id}
+                className="flex items-center justify-between gap-2 text-xs"
+              >
+                <span className="min-w-0 truncate font-mono text-gray-300">
+                  {file.file_path}
+                </span>
+                <span
+                  className={`shrink-0 font-semibold tabular-nums ${
+                    meetsQualityThreshold(file.score)
+                      ? "text-accent-green"
+                      : "text-amber-400"
+                  }`}
+                >
+                  {file.score}%
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <button
         type="button"

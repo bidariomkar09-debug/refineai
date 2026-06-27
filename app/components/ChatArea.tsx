@@ -15,6 +15,7 @@ import ConfirmButtons from "./ConfirmButtons";
 import ProgressCard from "./ProgressCard";
 import SummaryCard from "./SummaryCard";
 import BuildChecklist from "./BuildChecklist";
+import { USER_MESSAGES } from "@/app/lib/userMessages";
 
 type ChatAreaProps = {
   messages: ChatMessage[];
@@ -89,7 +90,7 @@ export default function ChatArea({
             <p className="mt-2 max-w-md text-sm text-gray-400">
               Describe your app idea below. I&apos;ll plan the project, ask for
               your confirmation, then build each file with automatic review and
-              refinement.
+              refinement until every file reaches {USER_MESSAGES.qualityTarget.toLowerCase()}.
             </p>
           </div>
         ) : (

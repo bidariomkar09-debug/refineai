@@ -16,6 +16,7 @@ import { generateSummary } from "@/app/lib/agentAI";
 import { createSSEStream, sseResponse } from "@/app/lib/streamClient";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
 import type { ProjectPlan } from "@/app/lib/agentTypes";
+import { meetsQualityThreshold } from "@/app/lib/agentTypes";
 
 export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
@@ -83,6 +84,11 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  if (fileId && action === "rebuild") {
+    await updateFileStatus(fileId, "building");
+    return NextResponse.json({ ok: true });
+  }
+
   if (projectId && status) {
     await updateProjectStatus(projectId, status as "paused" | "building");
     return NextResponse.json({ ok: true });
@@ -91,6 +97,29 @@ export async function PATCH(request: NextRequest) {
   if (projectId) {
     const project = await getProject(projectId);
     if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const files = await getProjectFiles(projectId);
+    const belowThreshold = files.filter(
+      (f) =>
+        f.status !== "skipped" &&
+        (f.status !== "done" || !meetsQualityThreshold(f.score))
+    );
+
+    if (belowThreshold.length > 0) {
+      return NextResponse.json(
+        {
+          error: "Quality threshold not met",
+          threshold: 95,
+          files: belowThreshold.map((f) => ({
+            path: f.file_path,
+            score: f.score,
+            status: f.status,
+          })),
+        },
+        { status: 409 }
+      );
+    }
+
     const plan = project.plan as ProjectPlan;
     const summary = await generateSummary(plan);
     const fullPlan = {

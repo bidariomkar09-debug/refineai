@@ -1,7 +1,9 @@
 "use client";
 
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
+import { meetsQualityThreshold } from "@/app/lib/agentTypes";
 import FileIcon from "./FileIcon";
+import { USER_MESSAGES } from "@/app/lib/userMessages";
 
 type BuildChecklistProps = {
   files: ExplorerFile[];
@@ -23,7 +25,7 @@ function StatusIndicator({
       </span>
     );
   }
-  if (file.status === "done" && file.score >= 90) {
+  if (file.status === "done" && meetsQualityThreshold(file.score)) {
     return (
       <svg className="h-4 w-4 shrink-0 text-accent-green" viewBox="0 0 16 16" fill="currentColor">
         <path d="M6.5 11.5L3.5 8.5l1-1 2 2 5-5 1 1-6 6z" />
@@ -47,9 +49,12 @@ export default function BuildChecklist({ files, activeFileId }: BuildChecklistPr
   return (
     <div className="rounded-xl border border-surface-border bg-surface-raised/50 p-4">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-          Building your project
-        </p>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+            Building your project
+          </p>
+          <p className="mt-0.5 text-[10px] text-gray-600">{USER_MESSAGES.qualityTarget}</p>
+        </div>
         <span className="text-xs tabular-nums text-gray-400">
           {doneCount}/{files.length} files
         </span>
@@ -82,7 +87,13 @@ export default function BuildChecklist({ files, activeFileId }: BuildChecklistPr
                 {file.file_path}
               </span>
               {file.status === "done" && file.score > 0 && (
-                <span className="shrink-0 font-semibold tabular-nums text-accent-green">
+                <span
+                  className={`shrink-0 font-semibold tabular-nums ${
+                    meetsQualityThreshold(file.score)
+                      ? "text-accent-green"
+                      : "text-amber-400"
+                  }`}
+                >
                   {file.score}%
                 </span>
               )}

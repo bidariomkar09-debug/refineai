@@ -1,4 +1,10 @@
-import type { DbFile, ProjectPlan, SSEEvent } from "./agentTypes";
+import {
+  FILE_SCORE_THRESHOLD,
+  meetsQualityThreshold,
+  type DbFile,
+  type ProjectPlan,
+  type SSEEvent,
+} from "./agentTypes";
 import { fetchStream } from "./streamClient";
 import { USER_MESSAGES } from "./userMessages";
 
@@ -16,6 +22,94 @@ export type OrchestratorControls = {
   skipCurrent: () => void;
   isPaused: () => boolean;
 };
+
+const QUALITY_PASS_MAX_ITERATIONS = 5;
+
+async function fetchProjectFiles(projectId: string): Promise<DbFile[]> {
+  const res = await fetch(`/api/projects?id=${projectId}`);
+  const data = await res.json();
+  return (data.files ?? []) as DbFile[];
+}
+
+function getSubThresholdFiles(files: DbFile[]): DbFile[] {
+  return files.filter(
+    (f) =>
+      f.status !== "skipped" &&
+      ((f.status === "done" && !meetsQualityThreshold(f.score)) ||
+        f.status === "building")
+  );
+}
+
+async function rebuildFile(
+  projectId: string,
+  file: DbFile,
+  callbacks: Pick<
+    OrchestratorCallbacks,
+    "onStatus" | "onFileStart" | "onRound" | "onFileComplete"
+  >,
+  signal?: AbortSignal
+): Promise<void> {
+  await fetch("/api/projects", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId, fileId: file.id, action: "rebuild" }),
+  });
+
+  callbacks.onFileStart(file);
+
+  await fetchStream(
+    "/api/build/file",
+    { fileId: file.id, projectId },
+    (event) => {
+      if (event.type === "status") {
+        callbacks.onStatus(event.message);
+      } else if (event.type === "round") {
+        callbacks.onRound(file.id, event);
+      } else if (event.type === "file_complete") {
+        callbacks.onFileComplete(event.fileId, event.score);
+      }
+    },
+    signal
+  );
+}
+
+export async function runQualityPass(
+  projectId: string,
+  callbacks: Pick<
+    OrchestratorCallbacks,
+    "onStatus" | "onFileStart" | "onRound" | "onFileComplete"
+  >,
+  signal?: AbortSignal
+): Promise<boolean> {
+  for (let iteration = 0; iteration < QUALITY_PASS_MAX_ITERATIONS; iteration++) {
+    if (signal?.aborted) return false;
+
+    const freshFiles = await fetchProjectFiles(projectId);
+    const subThreshold = getSubThresholdFiles(freshFiles);
+
+    if (subThreshold.length === 0) {
+      return freshFiles.every(
+        (f) =>
+          f.status === "skipped" ||
+          (f.status === "done" && meetsQualityThreshold(f.score))
+      );
+    }
+
+    callbacks.onStatus(USER_MESSAGES.fixing);
+
+    for (const file of subThreshold) {
+      if (signal?.aborted) return false;
+      await rebuildFile(projectId, file, callbacks, signal);
+    }
+  }
+
+  const finalFiles = await fetchProjectFiles(projectId);
+  return finalFiles.every(
+    (f) =>
+      f.status === "skipped" ||
+      (f.status === "done" && meetsQualityThreshold(f.score))
+  );
+}
 
 export function startBuild(
   projectId: string,
@@ -43,7 +137,8 @@ export function startBuild(
   (async () => {
     for (const file of files) {
       if (signal?.aborted) break;
-      if (file.status === "skipped" || file.status === "done") continue;
+      if (file.status === "skipped") continue;
+      if (file.status === "done" && meetsQualityThreshold(file.score)) continue;
 
       await waitIfPaused();
       if (skipCurrent) {
@@ -81,9 +176,7 @@ export function startBuild(
     for (const apiFile of apiFiles) {
       if (signal?.aborted) break;
 
-      const res = await fetch(`/api/projects?id=${projectId}`);
-      const data = await res.json();
-      const freshFiles = (data.files ?? []) as DbFile[];
+      const freshFiles = await fetchProjectFiles(projectId);
       const built = freshFiles.find((f) => f.id === apiFile.id);
       if (!built?.content) continue;
 
@@ -98,17 +191,13 @@ export function startBuild(
 
       if (!testResult.passed) {
         callbacks.onStatus(USER_MESSAGES.fixing);
-        await fetchStream(
-          "/api/build/file",
-          { fileId: apiFile.id, projectId },
-          (event) => {
-            if (event.type === "status") callbacks.onStatus(event.message);
-            else if (event.type === "round") callbacks.onRound(apiFile.id, event);
-          },
-          signal
-        );
+        await rebuildFile(projectId, apiFile, callbacks, signal);
       }
     }
+
+    if (signal?.aborted) return;
+
+    await runQualityPass(projectId, callbacks, signal);
 
     if (signal?.aborted) return;
 
@@ -119,6 +208,23 @@ export function startBuild(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId }),
     });
+
+    if (!summaryRes.ok) {
+      callbacks.onStatus(USER_MESSAGES.fixing);
+      await runQualityPass(projectId, callbacks, signal);
+      const retryRes = await fetch("/api/projects", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      if (!retryRes.ok) return;
+      const retryData = await retryRes.json();
+      const summaryPlan = (retryData.plan ?? {}) as ProjectPlan;
+      callbacks.onStatus(USER_MESSAGES.complete);
+      callbacks.onComplete(summaryPlan);
+      return;
+    }
+
     const summaryData = await summaryRes.json();
     const summaryPlan = (summaryData.plan ?? {}) as ProjectPlan;
 
@@ -151,3 +257,5 @@ export function startBuild(
     isPaused: () => paused,
   };
 }
+
+export { meetsQualityThreshold };

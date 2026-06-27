@@ -16,6 +16,7 @@ export const USER_MESSAGES = {
   installingDeps: "Installing dependencies...",
   previewReady: "Your app is running!",
   previewError: "Fixing a few things...",
+  qualityTarget: "Target: 95%+ quality",
 } as const;
 
 export function getFileStatusMessage(task: "write" | "review" | "refine"): string {

@@ -1,5 +1,5 @@
 import {
-  FILE_MAX_ROUNDS,
+  FILE_ABSOLUTE_MAX_ROUNDS,
   FILE_SCORE_THRESHOLD,
   type FileRoundEvent,
   type FileTask,
@@ -76,29 +76,19 @@ export async function runFileLoop(
   callbacks.onStatus?.("Writing the code...");
   await runTask("write");
 
-  if (score >= FILE_SCORE_THRESHOLD) {
-    return { content: currentCode, score, roundsTaken: round, totalTokens };
-  }
-
-  round = 2;
-
-  while (round <= FILE_MAX_ROUNDS) {
+  while (score < FILE_SCORE_THRESHOLD && round < FILE_ABSOLUTE_MAX_ROUNDS) {
     if (signal?.aborted) throw new Error("aborted");
 
     callbacks.onStatus?.("Reviewing the code...");
     await runTask("review");
-    if (score >= FILE_SCORE_THRESHOLD) {
-      return { content: currentCode, score, roundsTaken: round, totalTokens };
-    }
+    if (score >= FILE_SCORE_THRESHOLD) break;
 
-    if (round >= FILE_MAX_ROUNDS) break;
+    if (round >= FILE_ABSOLUTE_MAX_ROUNDS) break;
     round++;
 
     callbacks.onStatus?.("Making improvements...");
     await runTask("refine");
-    if (score >= FILE_SCORE_THRESHOLD) {
-      return { content: currentCode, score, roundsTaken: round, totalTokens };
-    }
+    if (score >= FILE_SCORE_THRESHOLD) break;
 
     round++;
   }

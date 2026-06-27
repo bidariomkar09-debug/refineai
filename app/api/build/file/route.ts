@@ -10,7 +10,10 @@ import {
 import { runFileLoop, checkSyntax } from "@/app/lib/fileLoopEngine";
 import { createSSEStream, sseResponse } from "@/app/lib/streamClient";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
-import type { ProjectPlan } from "@/app/lib/agentTypes";
+import {
+  meetsQualityThreshold,
+  type ProjectPlan,
+} from "@/app/lib/agentTypes";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -73,9 +76,14 @@ export async function POST(request: NextRequest) {
       let finalContent = result.content;
       let finalScore = result.score;
 
-      if (!syntax.valid && result.score < 90) {
+      if (!syntax.valid && !meetsQualityThreshold(result.score)) {
         send({ type: "status", message: USER_MESSAGES.fixing });
-        // One silent refine attempt handled by loop already
+      }
+
+      if (!meetsQualityThreshold(finalScore)) {
+        send({ type: "status", message: USER_MESSAGES.fixing });
+        await updateFileStatus(fileId, "building");
+        return;
       }
 
       await completeFile(fileId, finalContent, finalScore, result.roundsTaken);

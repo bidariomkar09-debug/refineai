@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
+import { meetsQualityThreshold } from "@/app/lib/agentTypes";
 import {
   buildFileTree,
   shouldExpandFolder,
@@ -26,7 +27,7 @@ function StatusDot({ status, score }: { status: ExplorerFile["status"]; score: n
       </span>
     );
   }
-  if (status === "done" && score >= 90) {
+  if (status === "done" && meetsQualityThreshold(score)) {
     return <span className="h-2 w-2 shrink-0 rounded-full bg-accent-green" title="Done" />;
   }
   if (status === "error") {
@@ -49,7 +50,7 @@ function fileRowClass(file: ExplorerFile, selected: boolean): string {
   if (file.status === "building") {
     return `${base} border-l-2 border-transparent text-accent hover:bg-accent/10`;
   }
-  if (file.status === "done" && file.score >= 90) {
+  if (file.status === "done" && meetsQualityThreshold(file.score)) {
     return `${base} border-l-2 border-transparent text-gray-200 hover:bg-surface-border/40`;
   }
   if (file.status === "error") {
@@ -206,7 +207,9 @@ function TreeNodeRow({
       {(file!.status === "done" || file!.status === "building") && file!.score > 0 && (
         <span
           className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums ${
-            file!.score >= 90 ? "bg-accent-green/15 text-accent-green" : "bg-gray-700/50 text-gray-400"
+            meetsQualityThreshold(file!.score)
+              ? "bg-accent-green/15 text-accent-green"
+              : "bg-amber-500/15 text-amber-400"
           }`}
         >
           {file!.score}%

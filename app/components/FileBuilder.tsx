@@ -2,6 +2,7 @@
 
 import type { DbFile, FileRoundEvent } from "@/app/lib/agentTypes";
 import CodeBlock, { detectLanguage } from "./CodeBlock";
+import { USER_MESSAGES } from "@/app/lib/userMessages";
 
 type FileBuilderProps = {
   activeFile: DbFile | null;
@@ -42,6 +43,7 @@ export default function FileBuilder({
           {activeFile && (
             <p className="truncate font-mono text-[10px] text-gray-500">{activeFile.file_path}</p>
           )}
+          <p className="text-[10px] text-gray-600">{USER_MESSAGES.qualityTarget}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button
