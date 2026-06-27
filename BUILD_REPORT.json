@@ -1,0 +1,70 @@
+{
+  "projectId": "e59651e1-f1ad-41b4-b757-a0ee4bf8ac33",
+  "name": "Personal AI Assistant",
+  "status": "complete",
+  "fileCount": 14,
+  "doneCount": 14,
+  "avgScore": 96,
+  "belowThreshold": [],
+  "files": [
+    {
+      "path": "app/api/chat/route.ts",
+      "score": 95
+    },
+    {
+      "path": "app/api/daily-summary/route.ts",
+      "score": 97
+    },
+    {
+      "path": "app/api/habits/route.ts",
+      "score": 95
+    },
+    {
+      "path": "app/api/notes/route.ts",
+      "score": 95
+    },
+    {
+      "path": "app/api/tasks/route.ts",
+      "score": 95
+    },
+    {
+      "path": "app/globals.css",
+      "score": 95
+    },
+    {
+      "path": "app/layout.tsx",
+      "score": 95
+    },
+    {
+      "path": "app/page.tsx",
+      "score": 95
+    },
+    {
+      "path": "next.config.mjs",
+      "score": 95
+    },
+    {
+      "path": "package.json",
+      "score": 97
+    },
+    {
+      "path": "postcss.config.mjs",
+      "score": 100
+    },
+    {
+      "path": "README.md",
+      "score": 95
+    },
+    {
+      "path": "tailwind.config.ts",
+      "score": 95
+    },
+    {
+      "path": "tsconfig.json",
+      "score": 95
+    }
+  ],
+  "previewUrl": "http://localhost:3001",
+  "refineUrl": "http://localhost:3000",
+  "completedAt": "2026-06-27T13:28:41.220Z"
+}

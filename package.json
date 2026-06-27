@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
+    "dev:clean": "rm -rf .next && next dev -p 3000",
+    "build:assistant": "node scripts/autonomous-build.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
