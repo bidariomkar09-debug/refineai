@@ -76,6 +76,7 @@ export default function CodeBlock({
 }: CodeBlockProps) {
   const lang = language ?? "typescript";
   const displayCode = code || "// Waiting for code...";
+  const fullHeight = maxHeight === "100%";
   const [style, setStyle] = useState<Record<string, React.CSSProperties> | null>(
     null
   );
@@ -88,22 +89,30 @@ export default function CodeBlock({
     });
   }, []);
 
+  const wrapperClass = fullHeight
+    ? "h-full overflow-hidden rounded-lg border border-surface-border"
+    : "overflow-hidden rounded-lg border border-surface-border";
+
   if (!mounted || !style) {
     return (
-      <div className="overflow-hidden rounded-lg border border-surface-border">
-        <PlainCode code={displayCode} maxHeight={maxHeight} />
+      <div className={wrapperClass}>
+        <PlainCode
+          code={displayCode}
+          maxHeight={fullHeight ? "100%" : maxHeight}
+        />
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-surface-border">
+    <div className={wrapperClass}>
       <PrismHighlighter
         language={lang}
         style={style}
         customStyle={{
           margin: 0,
-          maxHeight,
+          maxHeight: fullHeight ? "100%" : maxHeight,
+          height: fullHeight ? "100%" : undefined,
           fontSize: "12px",
           background: "#0d1117",
         }}

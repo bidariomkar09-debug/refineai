@@ -2,17 +2,17 @@
 
 import type { DbFile, FileRoundEvent } from "@/app/lib/agentTypes";
 import CodeBlock, { detectLanguage } from "./CodeBlock";
-import FileTree from "./FileTree";
 
 type FileBuilderProps = {
-  files: DbFile[];
   activeFile: DbFile | null;
   currentCode: string;
   currentRound: FileRoundEvent | null;
   statusMessage: string;
   isOpen: boolean;
+  minimized: boolean;
+  isBuilding: boolean;
   onClose: () => void;
-  onSelectFile: (file: DbFile) => void;
+  onToggleMinimize: () => void;
 };
 
 const TASK_LABEL: Record<string, string> = {
@@ -22,66 +22,114 @@ const TASK_LABEL: Record<string, string> = {
 };
 
 export default function FileBuilder({
-  files,
   activeFile,
   currentCode,
   currentRound,
   statusMessage,
   isOpen,
+  minimized,
+  isBuilding,
   onClose,
-  onSelectFile,
+  onToggleMinimize,
 }: FileBuilderProps) {
-  const panel = (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-surface-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-white">File Builder</h2>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-gray-400 hover:text-white md:hidden"
-          aria-label="Close"
-        >
-          ✕
-        </button>
-      </div>
-
-      <div className="border-b border-surface-border p-3">
-        <p className="mb-2 text-xs text-gray-500">{statusMessage}</p>
-        {activeFile && (
-          <div className="mb-2">
-            <p className="font-mono text-xs text-accent">{activeFile.file_path}</p>
-            {currentRound && (
-              <p className="mt-1 text-xs text-gray-400">
-                Round {currentRound.round} — {TASK_LABEL[currentRound.task]} —{" "}
-                <span className="font-bold text-white">{currentRound.score}%</span>
-              </p>
+  const panelBody = (
+    <>
+      <div className="flex items-center justify-between border-b border-surface-border px-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-sm font-semibold text-white">
+            {activeFile?.file_name ?? "File Builder"}
+          </h2>
+          {activeFile && (
+            <p className="truncate font-mono text-[10px] text-gray-500">{activeFile.file_path}</p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={onToggleMinimize}
+            className="hidden rounded p-1.5 text-gray-400 hover:bg-surface-border hover:text-white lg:block"
+            aria-label={minimized ? "Maximize panel" : "Minimize panel"}
+          >
+            {minimized ? (
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+            ) : (
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+              </svg>
             )}
-          </div>
-        )}
-        <CodeBlock
-          code={currentCode || activeFile?.content || ""}
-          language={activeFile ? detectLanguage(activeFile.file_path) : "typescript"}
-          maxHeight="280px"
-        />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1.5 text-gray-400 hover:bg-surface-border hover:text-white lg:hidden"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
-          All Files
-        </p>
-        <FileTree
-          files={files}
-          activeFileId={activeFile?.id ?? null}
-          onSelect={onSelectFile}
-        />
-      </div>
+      {!minimized && (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
+          {statusMessage && (
+            <p className="mb-2 text-xs text-gray-500">{statusMessage}</p>
+          )}
+          {activeFile && currentRound && (
+            <div className="mb-2 flex items-center justify-between text-xs">
+              <span className="text-gray-400">
+                Round {currentRound.round} — {TASK_LABEL[currentRound.task]}
+              </span>
+              <span className="font-bold text-accent">{currentRound.score}%</span>
+            </div>
+          )}
+          {activeFile && currentRound && (
+            <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-gray-800">
+              <div
+                className="h-full rounded-full bg-accent motion-safe:transition-all duration-500"
+                style={{ width: `${currentRound.score}%` }}
+              />
+            </div>
+          )}
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <CodeBlock
+              code={currentCode || activeFile?.content || ""}
+              language={activeFile ? detectLanguage(activeFile.file_path) : "typescript"}
+              maxHeight="100%"
+            />
+          </div>
+        </div>
+      )}
+    </>
+  );
+
+  const minimizedStrip = (
+    <div className="flex h-full flex-col items-center py-3">
+      <button
+        type="button"
+        onClick={onToggleMinimize}
+        className="rounded p-2 text-gray-400 hover:bg-surface-border hover:text-white"
+        aria-label="Expand panel"
+      >
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+      </button>
+      {isBuilding && (
+        <span className="mt-2 flex h-2 w-2 motion-safe:animate-pulse rounded-full bg-accent" />
+      )}
     </div>
   );
 
   return (
     <>
-      <aside className="hidden h-full w-96 shrink-0 border-l border-surface-border bg-surface-raised lg:flex lg:flex-col">
-        {panel}
+      <aside
+        className={`hidden shrink-0 flex-col overflow-hidden border-l border-surface-border bg-surface-raised motion-safe:transition-all duration-300 lg:flex ${
+          minimized ? "w-10" : "w-96"
+        }`}
+      >
+        {minimized ? minimizedStrip : panelBody}
       </aside>
 
       {isOpen && (
@@ -91,8 +139,8 @@ export default function FileBuilder({
             onClick={onClose}
             aria-hidden="true"
           />
-          <aside className="fixed inset-y-0 right-0 z-50 w-full max-w-md border-l border-surface-border bg-surface-raised lg:hidden">
-            {panel}
+          <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-surface-border bg-surface-raised lg:hidden">
+            {panelBody}
           </aside>
         </>
       )}

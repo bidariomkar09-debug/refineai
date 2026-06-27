@@ -13,8 +13,7 @@ import { fetchStream } from "@/app/lib/streamClient";
 import { startBuild, type OrchestratorControls } from "@/app/lib/buildOrchestrator";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
 import Sidebar, { SidebarToggle, FileBuilderToggle } from "./Sidebar";
-import ChatArea from "./ChatArea";
-import InputBox from "./InputBox";
+import CenterPanel, { type CenterTab } from "./CenterPanel";
 import FileBuilder from "./FileBuilder";
 
 let msgCounter = 0;
@@ -28,6 +27,7 @@ export default function AgentApp() {
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [fileBuilderOpen, setFileBuilderOpen] = useState(false);
+  const [fileBuilderMinimized, setFileBuilderMinimized] = useState(false);
 
   const [projectId, setProjectId] = useState<string | null>(null);
   const [plan, setPlan] = useState<ProjectPlan | null>(null);
@@ -40,6 +40,10 @@ export default function AgentApp() {
   const [awaitingChanges, setAwaitingChanges] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  const [centerTab, setCenterTab] = useState<CenterTab>("chat");
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [viewerCode, setViewerCode] = useState("");
+
   const [activeFile, setActiveFile] = useState<DbFile | null>(null);
   const [currentCode, setCurrentCode] = useState("");
   const [currentRound, setCurrentRound] = useState<FileRoundEvent | null>(null);
@@ -50,6 +54,9 @@ export default function AgentApp() {
 
   const buildAbortRef = useRef<AbortController | null>(null);
   const controlsRef = useRef<OrchestratorControls | null>(null);
+  const activeFileIdRef = useRef<string | null>(null);
+
+  const selectedFile = files.find((f) => f.id === selectedFileId) ?? null;
 
   const loadProjects = useCallback(async () => {
     try {
@@ -74,6 +81,18 @@ export default function AgentApp() {
     return data.files as DbFile[];
   }, []);
 
+  const handleSelectFile = useCallback(
+    (file: DbFile) => {
+      setSelectedFileId(file.id);
+      setCenterTab("code");
+
+      const isLive =
+        file.id === activeFileIdRef.current && file.status === "building";
+      setViewerCode(isLive ? currentCode : file.content ?? "");
+    },
+    [currentCode]
+  );
+
   const handleDownload = useCallback(() => {
     const doneFiles = files.filter((f) => f.content);
     if (doneFiles.length === 0) return;
@@ -93,6 +112,7 @@ export default function AgentApp() {
 
   const handleNewProject = useCallback(() => {
     buildAbortRef.current?.abort();
+    activeFileIdRef.current = null;
     setProjectId(null);
     setPlan(null);
     setSummaryPlan(null);
@@ -102,22 +122,34 @@ export default function AgentApp() {
     setStatusMessage("");
     setShowConfirm(false);
     setAwaitingChanges(false);
+    setCenterTab("chat");
+    setSelectedFileId(null);
+    setViewerCode("");
     setActiveFile(null);
     setCurrentCode("");
     setCurrentRound(null);
     setActiveProgress(null);
+    setFileBuilderMinimized(false);
   }, []);
 
   const loadProject = useCallback(async (project: DbProject) => {
     buildAbortRef.current?.abort();
+    activeFileIdRef.current = null;
     setIsLoading(true);
 
     try {
       const res = await fetch(`/api/projects?id=${project.id}`);
       const data = await res.json();
       const loadedPlan = data.project?.plan as ProjectPlan;
+      const loadedFiles = (data.files ?? []) as DbFile[];
       const loadedMessages: ChatMessage[] = (data.messages ?? []).map(
-        (m: { id: string; role: "user" | "assistant"; content: string; type: string; metadata: Record<string, unknown> }) => ({
+        (m: {
+          id: string;
+          role: "user" | "assistant";
+          content: string;
+          type: string;
+          metadata: Record<string, unknown>;
+        }) => ({
           id: m.id,
           role: m.role,
           content: m.type === "plan" ? "Here's your project plan:" : m.content,
@@ -128,8 +160,11 @@ export default function AgentApp() {
 
       setProjectId(project.id);
       setPlan(loadedPlan);
-      setFiles(data.files ?? []);
+      setFiles(loadedFiles);
       setMessages(loadedMessages);
+      setSelectedFileId(null);
+      setViewerCode("");
+      setCenterTab("chat");
 
       if (project.status === "complete") {
         setPhase("complete");
@@ -153,6 +188,7 @@ export default function AgentApp() {
     async (idea: string) => {
       setIsLoading(true);
       setPhase("planning");
+      setCenterTab("chat");
       setStatusMessage(USER_MESSAGES.planning);
       setMessages((prev) => [
         ...prev,
@@ -235,7 +271,12 @@ export default function AgentApp() {
     (text: string) => {
       if (phase === "idle" || phase === "planning") {
         handlePlanIdea(text);
-      } else if (awaitingChanges || phase === "awaiting_confirm" || phase === "building" || phase === "testing") {
+      } else if (
+        awaitingChanges ||
+        phase === "awaiting_confirm" ||
+        phase === "building" ||
+        phase === "testing"
+      ) {
         handleRevision(text);
       }
     },
@@ -248,6 +289,8 @@ export default function AgentApp() {
     setIsLoading(true);
     setPhase("building");
     setFileBuilderOpen(true);
+    setFileBuilderMinimized(false);
+    setCenterTab("code");
 
     await fetch("/api/projects", {
       method: "POST",
@@ -264,9 +307,13 @@ export default function AgentApp() {
       {
         onStatus: setStatusMessage,
         onFileStart: (file) => {
+          activeFileIdRef.current = file.id;
           setActiveFile(file);
+          setSelectedFileId(file.id);
           setCurrentCode("");
+          setViewerCode("");
           setCurrentRound(null);
+          setCenterTab("code");
           setActiveProgress({ fileName: file.file_name, round: null });
           setFiles((prev) =>
             prev.map((f) =>
@@ -274,15 +321,21 @@ export default function AgentApp() {
             )
           );
         },
-        onRound: (_fileId, event) => {
+        onRound: (fileId, event) => {
           const round = event.data;
           setCurrentRound(round);
-          if (round.code) setCurrentCode(round.code);
+          if (round.code) {
+            setCurrentCode(round.code);
+            if (fileId === selectedFileId || fileId === activeFileIdRef.current) {
+              setViewerCode(round.code);
+            }
+          }
           setActiveProgress((prev) =>
             prev ? { ...prev, round } : null
           );
         },
         onFileComplete: (fileId, score) => {
+          activeFileIdRef.current = null;
           setFiles((prev) =>
             prev.map((f) =>
               f.id === fileId
@@ -290,7 +343,12 @@ export default function AgentApp() {
                 : f
             )
           );
-          refreshFiles(projectId);
+          refreshFiles(projectId).then((updated) => {
+            const completed = updated?.find((f) => f.id === fileId);
+            if (completed && selectedFileId === fileId) {
+              setViewerCode(completed.content ?? "");
+            }
+          });
         },
         onComplete: (finalPlan) => {
           setSummaryPlan(finalPlan);
@@ -298,6 +356,7 @@ export default function AgentApp() {
           setIsLoading(false);
           setStatusMessage("");
           setActiveProgress(null);
+          setCenterTab("chat");
           loadProjects();
           refreshFiles(projectId);
         },
@@ -306,12 +365,25 @@ export default function AgentApp() {
     );
 
     setIsLoading(false);
-  }, [projectId, plan, refreshFiles, loadProjects]);
+  }, [projectId, plan, refreshFiles, loadProjects, selectedFileId]);
 
   const handleMakeChanges = useCallback(() => {
     setAwaitingChanges(true);
     setShowConfirm(false);
+    setCenterTab("chat");
   }, []);
+
+  useEffect(() => {
+    if (
+      selectedFileId &&
+      selectedFileId === activeFileIdRef.current &&
+      currentCode
+    ) {
+      setViewerCode(currentCode);
+    }
+  }, [selectedFileId, currentCode]);
+
+  const isBuilding = phase === "building" || phase === "testing";
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -324,7 +396,7 @@ export default function AgentApp() {
         </div>
 
         <div className="flex items-center gap-2">
-          {(phase === "building" || phase === "testing") && (
+          {isBuilding && (
             <>
               <button
                 type="button"
@@ -350,55 +422,50 @@ export default function AgentApp() {
         <Sidebar
           projects={projects}
           activeProjectId={projectId}
+          files={files}
+          selectedFileId={selectedFileId}
           isLoading={projectsLoading}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           onSelectProject={loadProject}
           onNewProject={handleNewProject}
+          onSelectFile={handleSelectFile}
         />
 
-        <main className="flex min-w-0 flex-1 flex-col">
-          <ChatArea
-            messages={messages}
-            plan={plan}
-            phase={phase}
-            statusMessage={statusMessage}
-            showConfirm={showConfirm}
-            activeProgress={activeProgress}
-            summaryPlan={summaryPlan}
-            files={files}
-            onConfirm={handleConfirm}
-            onMakeChanges={handleMakeChanges}
-            onDownload={handleDownload}
-            confirmDisabled={isLoading}
-            isLoading={isLoading}
-          />
-
-          <InputBox
-            onSubmit={handleSubmit}
-            disabled={
-              isLoading ||
-              phase === "complete" ||
-              (phase === "planning" && isLoading)
-            }
-            isLoading={isLoading}
-            phase={phase}
-            awaitingChanges={awaitingChanges}
-          />
-        </main>
+        <CenterPanel
+          centerTab={centerTab}
+          onTabChange={setCenterTab}
+          selectedFile={selectedFile}
+          viewerCode={viewerCode}
+          activeFileId={activeFile?.id ?? null}
+          currentRound={currentRound}
+          messages={messages}
+          plan={plan}
+          phase={phase}
+          statusMessage={statusMessage}
+          showConfirm={showConfirm}
+          activeProgress={activeProgress}
+          summaryPlan={summaryPlan}
+          files={files}
+          onConfirm={handleConfirm}
+          onMakeChanges={handleMakeChanges}
+          onDownload={handleDownload}
+          confirmDisabled={isLoading}
+          isLoading={isLoading}
+          onSubmit={handleSubmit}
+          awaitingChanges={awaitingChanges}
+        />
 
         <FileBuilder
-          files={files}
           activeFile={activeFile}
           currentCode={currentCode}
           currentRound={currentRound}
           statusMessage={statusMessage}
           isOpen={fileBuilderOpen}
+          minimized={fileBuilderMinimized}
+          isBuilding={isBuilding}
           onClose={() => setFileBuilderOpen(false)}
-          onSelectFile={(file) => {
-            setActiveFile(file);
-            setCurrentCode(file.content ?? "");
-          }}
+          onToggleMinimize={() => setFileBuilderMinimized((v) => !v)}
         />
       </div>
     </div>

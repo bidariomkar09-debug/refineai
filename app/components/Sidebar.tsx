@@ -1,15 +1,19 @@
 "use client";
 
-import type { DbProject } from "@/app/lib/agentTypes";
+import type { DbFile, DbProject } from "@/app/lib/agentTypes";
+import FileExplorer from "./FileExplorer";
 
 type SidebarProps = {
   projects: DbProject[];
   activeProjectId: string | null;
+  files: DbFile[];
+  selectedFileId: string | null;
   isLoading: boolean;
   isOpen: boolean;
   onClose: () => void;
   onSelectProject: (project: DbProject) => void;
   onNewProject: () => void;
+  onSelectFile: (file: DbFile) => void;
 };
 
 const STATUS_BADGE: Record<string, string> = {
@@ -27,18 +31,23 @@ function formatDate(iso: string): string {
   });
 }
 
-export default function Sidebar({
+function SidebarContent({
   projects,
   activeProjectId,
+  files,
+  selectedFileId,
   isLoading,
-  isOpen,
   onClose,
   onSelectProject,
   onNewProject,
-}: SidebarProps) {
-  const content = (
+  onSelectFile,
+}: Omit<SidebarProps, "isOpen">) {
+  return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-surface-border px-4 py-3">
+      {/* Top: logo + new project */}
+      <div className="shrink-0 border-b border-surface-border px-4 py-4">
+        <h1 className="text-lg font-bold text-white">RefineAI</h1>
+        <p className="mb-3 text-xs text-gray-500">AI Coding Agent</p>
         <button
           type="button"
           onClick={() => {
@@ -51,67 +60,81 @@ export default function Sidebar({
         </button>
       </div>
 
-      <div className="border-b border-surface-border px-4 py-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-          Past Projects
-        </h2>
+      {/* Middle: file explorer */}
+      <div className="flex min-h-0 flex-1 flex-col border-b border-surface-border">
+        <div className="shrink-0 px-4 py-2">
+          <h2 className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+            Explorer
+          </h2>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-1">
+          <FileExplorer
+            files={files}
+            selectedFileId={selectedFileId}
+            onSelectFile={onSelectFile}
+          />
+        </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto p-3">
-        {isLoading ? (
-          <p className="px-2 py-4 text-sm text-gray-500">Loading...</p>
-        ) : projects.length === 0 ? (
-          <p className="px-2 py-4 text-sm text-gray-500">
-            Your projects will appear here.
-          </p>
-        ) : (
-          <ul className="space-y-1.5">
-            {projects.map((project) => (
-              <li key={project.id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSelectProject(project);
-                    onClose();
-                  }}
-                  className={`w-full rounded-lg px-3 py-2.5 text-left transition ${
-                    activeProjectId === project.id
-                      ? "bg-accent/20 text-white"
-                      : "text-gray-300 hover:bg-surface-border/50"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium">
-                      {project.name}
+      {/* Bottom: past projects */}
+      <div className="flex max-h-[220px] shrink-0 flex-col">
+        <div className="shrink-0 border-b border-surface-border px-4 py-2">
+          <h2 className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+            Past Projects
+          </h2>
+        </div>
+        <nav className="min-h-0 flex-1 overflow-y-auto p-2">
+          {isLoading ? (
+            <p className="px-2 py-3 text-xs text-gray-500">Loading...</p>
+          ) : projects.length === 0 ? (
+            <p className="px-2 py-3 text-xs text-gray-500">Your projects will appear here.</p>
+          ) : (
+            <ul className="space-y-1">
+              {projects.map((project) => (
+                <li key={project.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelectProject(project);
+                      onClose();
+                    }}
+                    className={`w-full rounded-lg px-2.5 py-2 text-left transition ${
+                      activeProjectId === project.id
+                        ? "bg-accent/20 text-white"
+                        : "text-gray-300 hover:bg-surface-border/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-xs font-medium">{project.name}</span>
+                      <span
+                        className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium capitalize ${
+                          STATUS_BADGE[project.status] ?? STATUS_BADGE.planning
+                        }`}
+                      >
+                        {project.status}
+                      </span>
+                    </div>
+                    <span className="mt-0.5 block text-[10px] text-gray-500">
+                      {formatDate(project.created_at)}
                     </span>
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${
-                        STATUS_BADGE[project.status] ?? STATUS_BADGE.planning
-                      }`}
-                    >
-                      {project.status}
-                    </span>
-                  </div>
-                  <span className="mt-0.5 block text-xs text-gray-500">
-                    {formatDate(project.created_at)}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </nav>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </nav>
+      </div>
     </div>
   );
+}
+
+export default function Sidebar(props: SidebarProps) {
+  const { isOpen, onClose, ...contentProps } = props;
 
   return (
     <>
       <aside className="hidden h-full w-72 shrink-0 border-r border-surface-border bg-surface-raised md:flex md:flex-col">
-        <div className="border-b border-surface-border px-4 py-4">
-          <h1 className="text-lg font-bold text-white">RefineAI</h1>
-          <p className="text-xs text-gray-500">AI Coding Agent</p>
-        </div>
-        {content}
+        <SidebarContent {...contentProps} onClose={onClose} />
       </aside>
 
       {isOpen && (
@@ -127,7 +150,7 @@ export default function Sidebar({
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between border-b border-surface-border px-4 py-3">
+        <div className="flex items-center justify-between border-b border-surface-border px-4 py-3 md:hidden">
           <span className="text-sm font-semibold text-white">RefineAI</span>
           <button
             type="button"
@@ -138,7 +161,7 @@ export default function Sidebar({
             ✕
           </button>
         </div>
-        {content}
+        <SidebarContent {...contentProps} onClose={onClose} />
       </aside>
     </>
   );
@@ -168,7 +191,7 @@ export function FileBuilderToggle({ onClick }: { onClick: () => void }) {
       className="flex items-center gap-2 rounded-lg border border-surface-border bg-surface-raised px-3 py-2 text-sm text-gray-300 transition hover:border-gray-600 hover:text-white lg:hidden"
       aria-label="Open file builder"
     >
-      Files
+      Builder
     </button>
   );
 }
