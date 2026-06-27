@@ -36,7 +36,7 @@ function newId() {
   return `msg-${msgCounter}-${Date.now()}`;
 }
 
-export default function AgentApp() {
+export default function AgentApp({ initialProjectId }: { initialProjectId?: string | null } = {}) {
   const [projects, setProjects] = useState<DbProject[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -425,6 +425,25 @@ export default function AgentApp() {
       setIsLoading(false);
     }
   }, [refreshFiles]);
+
+  useEffect(() => {
+    if (!initialProjectId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/projects?id=${initialProjectId}`);
+        const data = await res.json();
+        if (!cancelled && data.project) {
+          await loadProject(data.project);
+        }
+      } catch {
+        // silent
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialProjectId, loadProject]);
 
   const handlePlanIdea = useCallback(
     async (idea: string) => {

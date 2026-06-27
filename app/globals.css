@@ -10,6 +10,22 @@
   body {
     @apply bg-surface text-gray-100 min-h-screen;
   }
+
+  html.light body {
+    @apply bg-gray-50 text-gray-900;
+  }
+
+  html.light .bg-\[\#0f0f12\] {
+    background-color: #f9fafb;
+  }
+
+  html.light .bg-\[\#12121a\] {
+    background-color: #ffffff;
+  }
+
+  html.light .bg-\[\#16161f\] {
+    background-color: #ffffff;
+  }
 }
 
 @layer utilities {

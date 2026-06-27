@@ -16,8 +16,13 @@ const config: Config = {
           border: "#30363d",
         },
         accent: {
-          DEFAULT: "#3b82f6",
+          DEFAULT: "#6366f1",
           green: "#22c55e",
+        },
+        indigo: {
+          400: "#818cf8",
+          500: "#6366f1",
+          600: "#4f46e5",
         },
       },
       animation: {

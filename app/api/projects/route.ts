@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   addMessage,
+  deleteProject,
   deleteProjectFiles,
   createProjectFiles,
   getMessages,
   getProject,
   getProjectFiles,
   getProjects,
+  getProjectsWithStats,
   updateFileStatus,
   updateProjectPlan,
   updateProjectStatus,
@@ -30,8 +32,30 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ project, files, messages });
   }
 
+  const stats = request.nextUrl.searchParams.get("stats");
+  if (stats === "true") {
+    const projects = await getProjectsWithStats();
+    return NextResponse.json({ projects });
+  }
+
   const projects = await getProjects();
   return NextResponse.json({ projects });
+}
+
+export async function DELETE(request: NextRequest) {
+  const id = request.nextUrl.searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+  try {
+    await deleteProject(id);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Delete failed" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {

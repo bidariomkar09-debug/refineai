@@ -1,5 +1,5 @@
-import AgentApp from "@/app/components/AgentApp";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <AgentApp />;
+  redirect("/dashboard");
 }
