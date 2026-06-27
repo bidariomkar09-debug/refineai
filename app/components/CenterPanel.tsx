@@ -1,15 +1,14 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { BuildPhase, ChatMessage, DbFile, FileRoundEvent, ProjectPlan } from "@/app/lib/agentTypes";
+import type { BuildPhase, DbFile, FileRoundEvent, ProjectPlan } from "@/app/lib/agentTypes";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import type { PreviewLogLine, PreviewStatus } from "@/app/lib/previewTypes";
-import ChatArea from "./ChatArea";
-import InputBox from "./InputBox";
+import PlanView from "./PlanView";
 import CodeViewer from "./CodeViewer";
 import PreviewPanel from "./PreviewPanel";
 
-export type CenterTab = "chat" | "code" | "preview";
+export type CenterTab = "plan" | "code" | "preview";
 
 type CenterPanelProps = {
   centerTab: CenterTab;
@@ -17,13 +16,12 @@ type CenterPanelProps = {
   selectedFile: DbFile | null;
   viewerCode: string;
   activeFileId: string | null;
+  activeFile: DbFile | null;
   currentRound: FileRoundEvent | null;
-  messages: ChatMessage[];
   plan: ProjectPlan | null;
   phase: BuildPhase;
   statusMessage: string;
   showConfirm: boolean;
-  activeProgress: { fileName: string; round: FileRoundEvent | null } | null;
   summaryPlan: ProjectPlan | null;
   files: DbFile[];
   mergedFiles: ExplorerFile[];
@@ -35,8 +33,6 @@ type CenterPanelProps = {
   isPreviewRunning: boolean;
   confirmDisabled: boolean;
   isLoading: boolean;
-  onSubmit: (text: string) => void;
-  awaitingChanges: boolean;
   previewStatus: PreviewStatus;
   previewLastUpdated: string | null;
   previewIframeKey: number;
@@ -80,13 +76,12 @@ export default function CenterPanel({
   selectedFile,
   viewerCode,
   activeFileId,
+  activeFile,
   currentRound,
-  messages,
   plan,
   phase,
   statusMessage,
   showConfirm,
-  activeProgress,
   summaryPlan,
   files,
   mergedFiles,
@@ -98,8 +93,6 @@ export default function CenterPanel({
   isPreviewRunning,
   confirmDisabled,
   isLoading,
-  onSubmit,
-  awaitingChanges,
   previewStatus,
   previewLastUpdated,
   previewIframeKey,
@@ -111,11 +104,13 @@ export default function CenterPanel({
   onPreviewRetry,
   onPreviewViewportChange,
 }: CenterPanelProps) {
+  const codeFile = activeFile ?? selectedFile;
+
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 border-b border-surface-border bg-surface-raised/50 px-2">
-        <TabButton active={centerTab === "chat"} onClick={() => onTabChange("chat")}>
-          Chat
+        <TabButton active={centerTab === "plan"} onClick={() => onTabChange("plan")}>
+          Plan
         </TabButton>
         <TabButton active={centerTab === "code"} onClick={() => onTabChange("code")}>
           Code
@@ -127,21 +122,20 @@ export default function CenterPanel({
 
       <div className="relative min-h-0 flex-1">
         <div
-          className={`absolute inset-0 flex flex-col motion-safe:transition-opacity duration-200 ${
-            centerTab === "chat" ? "opacity-100" : "pointer-events-none opacity-0"
+          className={`absolute inset-0 motion-safe:transition-opacity duration-200 ${
+            centerTab === "plan" ? "opacity-100" : "pointer-events-none opacity-0"
           }`}
         >
-          <ChatArea
-            messages={messages}
+          <PlanView
             plan={plan}
+            summaryPlan={summaryPlan}
             phase={phase}
             statusMessage={statusMessage}
             showConfirm={showConfirm}
-            activeProgress={activeProgress}
-            summaryPlan={summaryPlan}
-            files={files}
             mergedFiles={mergedFiles}
             activeFileId={activeFileId}
+            files={files}
+            isLoading={isLoading}
             onConfirm={onConfirm}
             onMakeChanges={onMakeChanges}
             onDownload={onDownload}
@@ -149,14 +143,6 @@ export default function CenterPanel({
             isRunDisabled={isRunDisabled}
             isPreviewRunning={isPreviewRunning}
             confirmDisabled={confirmDisabled}
-            isLoading={isLoading}
-          />
-          <InputBox
-            onSubmit={onSubmit}
-            disabled={isLoading || phase === "complete" || (phase === "planning" && isLoading)}
-            isLoading={isLoading}
-            phase={phase}
-            awaitingChanges={awaitingChanges}
           />
         </div>
 
@@ -166,10 +152,11 @@ export default function CenterPanel({
           }`}
         >
           <CodeViewer
-            file={selectedFile}
+            file={codeFile}
             code={viewerCode}
             activeFileId={activeFileId}
             currentRound={currentRound}
+            statusMessage={statusMessage}
           />
         </div>
 

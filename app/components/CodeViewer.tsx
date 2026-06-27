@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import type { DbFile, FileRoundEvent } from "@/app/lib/agentTypes";
 import { meetsQualityThreshold } from "@/app/lib/agentTypes";
+import { USER_MESSAGES } from "@/app/lib/userMessages";
 import CodeBlock, { detectLanguage } from "./CodeBlock";
 
 type CodeViewerProps = {
@@ -10,6 +11,7 @@ type CodeViewerProps = {
   code: string;
   activeFileId: string | null;
   currentRound: FileRoundEvent | null;
+  statusMessage?: string;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -20,11 +22,18 @@ const STATUS_LABEL: Record<string, string> = {
   skipped: "Skipped",
 };
 
+const TASK_LABEL: Record<string, string> = {
+  write: "Writing",
+  review: "Reviewing",
+  refine: "Refining",
+};
+
 export default function CodeViewer({
   file,
   code,
   activeFileId,
   currentRound,
+  statusMessage,
 }: CodeViewerProps) {
   const [copied, setCopied] = useState(false);
 
@@ -69,7 +78,10 @@ export default function CodeViewer({
     <div className="flex h-full flex-col">
       <div className="shrink-0 border-b border-surface-border bg-surface-raised/80 px-4 py-2.5">
         <div className="flex items-center justify-between gap-3">
-          <p className="min-w-0 truncate font-mono text-xs text-gray-300">{file.file_path}</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-mono text-xs text-gray-300">{file.file_path}</p>
+            <p className="text-[10px] text-gray-600">{USER_MESSAGES.qualityTarget}</p>
+          </div>
           <button
             type="button"
             onClick={handleCopy}
@@ -79,39 +91,63 @@ export default function CodeViewer({
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
-          <span>
-            Round{" "}
-            <span className="font-semibold text-gray-300">{displayRound || "—"}</span>
-          </span>
-          <span className="text-gray-700">·</span>
-          <span>
-            Score{" "}
+
+        {isLiveBuilding && statusMessage && (
+          <p className="mt-1.5 text-[11px] text-gray-500">{statusMessage}</p>
+        )}
+
+        {isLiveBuilding && currentRound && (
+          <>
+            <div className="mt-2 flex items-center justify-between text-xs">
+              <span className="text-gray-400">
+                Round {currentRound.round} — {TASK_LABEL[currentRound.task]}
+              </span>
+              <span className="font-bold text-accent">{currentRound.score}%</span>
+            </div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-800">
+              <div
+                className="h-full rounded-full bg-accent motion-safe:transition-all duration-500"
+                style={{ width: `${currentRound.score}%` }}
+              />
+            </div>
+          </>
+        )}
+
+        {!isLiveBuilding && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+            <span>
+              Round{" "}
+              <span className="font-semibold text-gray-300">{displayRound || "—"}</span>
+            </span>
+            <span className="text-gray-700">·</span>
+            <span>
+              Score{" "}
+              <span
+                className={`font-semibold ${
+                  displayScore > 0 && meetsQualityThreshold(displayScore)
+                    ? "text-accent-green"
+                    : "text-gray-300"
+                }`}
+              >
+                {displayScore > 0 ? `${displayScore}%` : "—"}
+              </span>
+            </span>
+            <span className="text-gray-700">·</span>
             <span
-              className={`font-semibold ${
-                displayScore > 0 && meetsQualityThreshold(displayScore)
-                  ? "text-accent-green"
-                  : "text-gray-300"
+              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                file.status === "done"
+                  ? "bg-accent-green/15 text-accent-green"
+                  : file.status === "building"
+                    ? "bg-accent/15 text-accent"
+                    : file.status === "error"
+                      ? "bg-red-500/15 text-red-400"
+                      : "bg-gray-700/40 text-gray-400"
               }`}
             >
-              {displayScore > 0 ? `${displayScore}%` : "—"}
+              {STATUS_LABEL[file.status] ?? file.status}
             </span>
-          </span>
-          <span className="text-gray-700">·</span>
-          <span
-            className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-              file.status === "done"
-                ? "bg-accent-green/15 text-accent-green"
-                : file.status === "building"
-                  ? "bg-accent/15 text-accent"
-                  : file.status === "error"
-                    ? "bg-red-500/15 text-red-400"
-                    : "bg-gray-700/40 text-gray-400"
-            }`}
-          >
-            {STATUS_LABEL[file.status] ?? file.status}
-          </span>
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden p-3 motion-safe:transition-opacity duration-200">

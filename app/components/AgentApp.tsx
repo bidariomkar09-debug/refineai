@@ -20,9 +20,9 @@ import {
 } from "@/app/lib/mergeProjectFiles";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
 import type { PreviewLogLine, PreviewStatus } from "@/app/lib/previewTypes";
-import Sidebar, { SidebarToggle, FileBuilderToggle } from "./Sidebar";
+import Sidebar, { SidebarToggle } from "./Sidebar";
 import CenterPanel, { type CenterTab } from "./CenterPanel";
-import FileBuilder from "./FileBuilder";
+import ChatPanel, { ChatPanelToggle } from "./ChatPanel";
 
 let msgCounter = 0;
 function newId() {
@@ -34,8 +34,8 @@ export default function AgentApp() {
   const [projects, setProjects] = useState<DbProject[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [fileBuilderOpen, setFileBuilderOpen] = useState(false);
-  const [fileBuilderMinimized, setFileBuilderMinimized] = useState(false);
+  const [chatPanelOpen, setChatPanelOpen] = useState(false);
+  const [chatPanelCollapsed, setChatPanelCollapsed] = useState(false);
 
   const [projectId, setProjectId] = useState<string | null>(null);
   const [plan, setPlan] = useState<ProjectPlan | null>(null);
@@ -48,7 +48,7 @@ export default function AgentApp() {
   const [awaitingChanges, setAwaitingChanges] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const [centerTab, setCenterTab] = useState<CenterTab>("chat");
+  const [centerTab, setCenterTab] = useState<CenterTab>("plan");
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [viewerCode, setViewerCode] = useState("");
 
@@ -271,14 +271,13 @@ export default function AgentApp() {
     setStatusMessage("");
     setShowConfirm(false);
     setAwaitingChanges(false);
-    setCenterTab("chat");
+    setCenterTab("plan");
     setSelectedFileId(null);
     setViewerCode("");
     setActiveFile(null);
     setCurrentCode("");
     setCurrentRound(null);
     setActiveProgress(null);
-    setFileBuilderMinimized(false);
     setPreviewStatus("idle");
     setPreviewLogs([]);
     setTerminalOpen(false);
@@ -318,7 +317,7 @@ export default function AgentApp() {
       setMessages(loadedMessages);
       setSelectedFileId(null);
       setViewerCode("");
-      setCenterTab("chat");
+      setCenterTab("plan");
 
       if (project.status === "complete") {
         const needsQuality = loadedFiles.some(
@@ -330,7 +329,7 @@ export default function AgentApp() {
           setShowConfirm(false);
           setSummaryPlan(null);
           setStatusMessage(USER_MESSAGES.fixing);
-          setFileBuilderOpen(true);
+          setCenterTab("code");
           setIsLoading(false);
 
           buildAbortRef.current = new AbortController();
@@ -341,9 +340,11 @@ export default function AgentApp() {
               onFileStart: (file) => {
                 activeFileIdRef.current = file.id;
                 setActiveFile(file);
+                setSelectedFileId(file.id);
                 setCurrentCode("");
                 setCurrentRound(null);
                 setActiveProgress({ fileName: file.file_name, round: null });
+                setCenterTab("code");
                 setFiles((prev) =>
                   syncFileIntoList(prev, { ...file, status: "building" })
                 );
@@ -351,7 +352,10 @@ export default function AgentApp() {
               onRound: (fileId, event) => {
                 const round = event.data;
                 setCurrentRound(round);
-                if (round.code) setCurrentCode(round.code);
+                if (round.code) {
+                  setCurrentCode(round.code);
+                  setViewerCode(round.code);
+                }
                 setActiveProgress((prev) =>
                   prev ? { ...prev, round } : null
                 );
@@ -372,6 +376,7 @@ export default function AgentApp() {
           setStatusMessage("");
           setActiveProgress(null);
           setActiveFile(null);
+          setCenterTab("plan");
         } else {
           setPhase("complete");
           setSummaryPlan(loadedPlan);
@@ -395,7 +400,7 @@ export default function AgentApp() {
     async (idea: string) => {
       setIsLoading(true);
       setPhase("planning");
-      setCenterTab("chat");
+      setCenterTab("plan");
       setStatusMessage(USER_MESSAGES.planning);
       setMessages((prev) => [
         ...prev,
@@ -410,6 +415,7 @@ export default function AgentApp() {
           setPlan(event.data);
           setPhase("awaiting_confirm");
           setShowConfirm(true);
+          setCenterTab("plan");
           setMessages((prev) => [
             ...prev,
             {
@@ -454,6 +460,7 @@ export default function AgentApp() {
           setPlan(event.data);
           setPhase("awaiting_confirm");
           setShowConfirm(true);
+          setCenterTab("plan");
           setMessages((prev) => [
             ...prev,
             {
@@ -495,9 +502,7 @@ export default function AgentApp() {
     setShowConfirm(false);
     setIsLoading(true);
     setPhase("building");
-    setFileBuilderOpen(true);
-    setFileBuilderMinimized(false);
-    setCenterTab("chat");
+    setCenterTab("plan");
 
     appendBuildMessage(USER_MESSAGES.building);
 
@@ -523,6 +528,7 @@ export default function AgentApp() {
           setViewerCode("");
           setCurrentRound(null);
           setActiveProgress({ fileName: file.file_name, round: null });
+          setCenterTab("code");
           setFiles((prev) =>
             syncFileIntoList(prev, { ...file, status: "building" })
           );
@@ -546,6 +552,7 @@ export default function AgentApp() {
         },
         onFileComplete: (fileId, score) => {
           activeFileIdRef.current = null;
+          setActiveFile(null);
           setFiles((prev) =>
             updateFileInList(prev, fileId, { status: "done", score })
           );
@@ -567,7 +574,8 @@ export default function AgentApp() {
           setIsLoading(false);
           setStatusMessage("");
           setActiveProgress(null);
-          setCenterTab("chat");
+          setActiveFile(null);
+          setCenterTab("plan");
           appendBuildMessage(USER_MESSAGES.complete);
           loadProjects();
           refreshFiles(projectId);
@@ -591,7 +599,7 @@ export default function AgentApp() {
   const handleMakeChanges = useCallback(() => {
     setAwaitingChanges(true);
     setShowConfirm(false);
-    setCenterTab("chat");
+    setCenterTab("plan");
   }, []);
 
   useEffect(() => {
@@ -608,7 +616,7 @@ export default function AgentApp() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <header className="flex shrink-0 items-center justify-between border-b border-surface-border bg-surface-raised px-4 py-3">
+      <header className="flex shrink-0 items-center justify-between border-b border-surface-border bg-surface-raised px-4 py-2.5">
         <div className="flex items-center gap-3">
           <SidebarToggle onClick={() => setSidebarOpen(true)} />
           <div className="md:hidden">
@@ -635,7 +643,7 @@ export default function AgentApp() {
               </button>
             </>
           )}
-          <FileBuilderToggle onClick={() => setFileBuilderOpen(true)} />
+          <ChatPanelToggle onClick={() => setChatPanelOpen(true)} />
         </div>
       </header>
 
@@ -660,13 +668,12 @@ export default function AgentApp() {
           selectedFile={selectedFile}
           viewerCode={viewerCode}
           activeFileId={activeFile?.id ?? null}
+          activeFile={activeFile}
           currentRound={currentRound}
-          messages={messages}
           plan={plan}
           phase={phase}
           statusMessage={statusMessage}
           showConfirm={showConfirm}
-          activeProgress={activeProgress}
           summaryPlan={summaryPlan}
           files={files}
           mergedFiles={mergedFiles}
@@ -678,8 +685,6 @@ export default function AgentApp() {
           isPreviewRunning={isPreviewStarting || previewStatus === "installing" || previewStatus === "starting"}
           confirmDisabled={isLoading}
           isLoading={isLoading}
-          onSubmit={handleSubmit}
-          awaitingChanges={awaitingChanges}
           previewStatus={previewStatus}
           previewLastUpdated={previewLastUpdated}
           previewIframeKey={previewIframeKey}
@@ -692,16 +697,18 @@ export default function AgentApp() {
           onPreviewViewportChange={setPreviewViewport}
         />
 
-        <FileBuilder
-          activeFile={activeFile}
-          currentCode={currentCode}
-          currentRound={currentRound}
-          statusMessage={statusMessage}
-          isOpen={fileBuilderOpen}
-          minimized={fileBuilderMinimized}
-          isBuilding={isBuilding}
-          onClose={() => setFileBuilderOpen(false)}
-          onToggleMinimize={() => setFileBuilderMinimized((v) => !v)}
+        <ChatPanel
+          messages={messages}
+          plan={plan}
+          phase={phase}
+          mergedFiles={mergedFiles}
+          isLoading={isLoading}
+          awaitingChanges={awaitingChanges}
+          isOpen={chatPanelOpen}
+          collapsed={chatPanelCollapsed}
+          onClose={() => setChatPanelOpen(false)}
+          onToggleCollapse={() => setChatPanelCollapsed((v) => !v)}
+          onSubmit={handleSubmit}
         />
       </div>
     </div>

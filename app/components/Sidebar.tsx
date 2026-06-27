@@ -48,9 +48,9 @@ function SidebarContent({
   return (
     <div className="flex h-full flex-col">
       {/* Top: logo + new project */}
-      <div className="shrink-0 border-b border-surface-border px-4 py-4">
-        <h1 className="text-lg font-bold text-white">RefineAI</h1>
-        <p className="mb-3 text-xs text-gray-500">AI Coding Agent</p>
+      <div className="shrink-0 border-b border-surface-border px-3 py-3">
+        <h1 className="text-base font-bold text-white">RefineAI</h1>
+        <p className="mb-2 text-[10px] text-gray-500">AI Coding Agent</p>
         <button
           type="button"
           onClick={() => {
@@ -65,7 +65,7 @@ function SidebarContent({
 
       {/* Middle: file explorer */}
       <div className="flex min-h-0 flex-1 flex-col border-b border-surface-border">
-        <div className="shrink-0 px-4 py-2">
+        <div className="shrink-0 px-3 py-1.5">
           <h2 className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
             Explorer
           </h2>
@@ -183,19 +183,6 @@ export function SidebarToggle({ onClick }: { onClick: () => void }) {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
       </svg>
       Menu
-    </button>
-  );
-}
-
-export function FileBuilderToggle({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-2 rounded-lg border border-surface-border bg-surface-raised px-3 py-2 text-sm text-gray-300 transition hover:border-gray-600 hover:text-white lg:hidden"
-      aria-label="Open file builder"
-    >
-      Builder
     </button>
   );
 }
