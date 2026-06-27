@@ -1,5 +1,5 @@
-import LoopApp from "@/app/components/LoopApp";
+import AgentApp from "@/app/components/AgentApp";
 
 export default function Home() {
-  return <LoopApp />;
+  return <AgentApp />;
 }

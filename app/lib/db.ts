@@ -1,32 +1,26 @@
-import { getSupabaseClient, SupabaseConfigError } from "./supabaseClient";
-import type { DeveloperConfig } from "./developerConfig";
-import type { Iteration, LoopStats, LoopTask } from "./types";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import type {
+  DbFile,
+  DbFileRound,
+  DbMessage,
+  DbProject,
+  FileStatus,
+  FileTask,
+  MessageType,
+  ProjectPlan,
+  ProjectStatus,
+} from "./agentTypes";
 
-export type DbSession = {
-  id: string;
-  target: string;
-  status: "running" | "completed" | "stopped";
-  final_output: string | null;
-  created_at: string;
-  model?: string | null;
-  temperature?: number | null;
-  score_threshold?: number | null;
-  max_rounds?: number | null;
-  system_prompt?: string | null;
-  json_mode?: boolean | null;
-  tokens_used?: number | null;
-  time_taken?: number | null;
-};
+let client: SupabaseClient | null = null;
 
-export type DbRound = {
-  id: string;
-  session_id: string;
-  round_number: number;
-  output: string | null;
-  critique: string | null;
-  score: number;
-  created_at: string;
-};
+function getClient(): SupabaseClient {
+  if (client) return client;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) throw new Error("Supabase not configured");
+  client = createClient(url, key);
+  return client;
+}
 
 export class DbError extends Error {
   constructor(message: string) {
@@ -35,194 +29,202 @@ export class DbError extends Error {
   }
 }
 
-function inferTaskFromRoundNumber(roundNumber: number): LoopTask {
-  if (roundNumber === 1) return "generate";
-  return roundNumber % 2 === 0 ? "critique" : "refine";
-}
-
-export function dbRoundToIteration(round: DbRound): Iteration {
-  const task = inferTaskFromRoundNumber(round.round_number);
-  const content =
-    task === "critique" ? (round.critique ?? "") : (round.output ?? "");
-
-  return {
-    round: round.round_number,
-    task,
-    content,
-    score: round.score,
-  };
-}
-
 export async function testConnection(): Promise<void> {
-  try {
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.from("sessions").select("id").limit(1);
-
-    if (error) {
-      throw new DbError(
-        error.message.includes("does not exist")
-          ? "Database tables not found. Run supabase/schema.sql in your Supabase SQL Editor."
-          : error.message
-      );
-    }
-  } catch (err) {
-    if (err instanceof SupabaseConfigError) throw err;
-    if (err instanceof DbError) throw err;
-    throw new DbError(
-      err instanceof Error ? err.message : "Failed to connect to Supabase"
-    );
+  const { error } = await getClient().from("projects").select("id").limit(1);
+  if (error?.message.includes("does not exist")) {
+    throw new DbError("Run supabase/migrations/20260628000000_coding_agent.sql");
   }
+  if (error) throw new DbError(error.message);
 }
 
-export async function createSession(
-  target: string,
-  config: DeveloperConfig
-): Promise<DbSession> {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from("sessions")
+export async function createProject(
+  plan: ProjectPlan
+): Promise<DbProject> {
+  const { data, error } = await getClient()
+    .from("projects")
     .insert({
-      target,
-      status: "running",
-      model: config.model,
-      temperature: config.temperature,
-      score_threshold: config.scoreThreshold,
-      max_rounds: config.maxRounds,
-      system_prompt: config.systemPrompt,
-      json_mode: config.jsonMode,
+      name: plan.name,
+      description: plan.description,
+      niche: plan.niche,
+      tech_stack: plan.techStack,
+      plan,
+      status: "planning",
     })
     .select()
     .single();
-
-  if (error || !data) {
-    throw new DbError(error?.message ?? "Failed to create session");
-  }
-
-  return data as DbSession;
+  if (error || !data) throw new DbError(error?.message ?? "Failed to create project");
+  return data as DbProject;
 }
 
-export async function saveRound(
-  sessionId: string,
-  iteration: Iteration
+export async function updateProjectStatus(
+  id: string,
+  status: ProjectStatus
 ): Promise<void> {
-  const supabase = getSupabaseClient();
-
-  const row: {
-    session_id: string;
-    round_number: number;
-    output: string | null;
-    critique: string | null;
-    score: number;
-  } =
-    iteration.task === "critique"
-      ? {
-          session_id: sessionId,
-          round_number: iteration.round,
-          output: null,
-          critique: iteration.content,
-          score: iteration.score,
-        }
-      : {
-          session_id: sessionId,
-          round_number: iteration.round,
-          output: iteration.content,
-          critique: null,
-          score: iteration.score,
-        };
-
-  const { error } = await supabase.from("rounds").insert(row);
-
-  if (error) {
-    throw new DbError(error.message);
-  }
+  const { error } = await getClient()
+    .from("projects")
+    .update({ status })
+    .eq("id", id);
+  if (error) throw new DbError(error.message);
 }
 
-export async function completeSession(
-  sessionId: string,
-  finalOutput: string,
-  stats?: LoopStats
+export async function updateProjectPlan(
+  id: string,
+  plan: ProjectPlan
 ): Promise<void> {
-  const supabase = getSupabaseClient();
-  const { error } = await supabase
-    .from("sessions")
-    .update({
-      status: "completed",
-      final_output: finalOutput,
-      tokens_used: stats?.totalTokens ?? 0,
-      time_taken: stats?.timeTakenSec ?? 0,
-    })
-    .eq("id", sessionId);
-
-  if (error) {
-    throw new DbError(error.message);
-  }
+  const { error } = await getClient()
+    .from("projects")
+    .update({ plan, name: plan.name, description: plan.description })
+    .eq("id", id);
+  if (error) throw new DbError(error.message);
 }
 
-export async function stopSession(
-  sessionId: string,
-  finalOutput: string,
-  stats?: LoopStats
-): Promise<void> {
-  const supabase = getSupabaseClient();
-  const { error } = await supabase
-    .from("sessions")
-    .update({
-      status: "stopped",
-      final_output: finalOutput,
-      tokens_used: stats?.totalTokens ?? 0,
-      time_taken: stats?.timeTakenSec ?? 0,
-    })
-    .eq("id", sessionId);
-
-  if (error) {
-    throw new DbError(error.message);
-  }
+export async function createProjectFiles(
+  projectId: string,
+  plan: ProjectPlan
+): Promise<DbFile[]> {
+  const rows = plan.files.map((f, i) => ({
+    project_id: projectId,
+    file_path: f.path,
+    file_name: f.name,
+    status: "pending" as FileStatus,
+    sort_order: i,
+  }));
+  const { data, error } = await getClient().from("files").insert(rows).select();
+  if (error) throw new DbError(error.message);
+  return (data ?? []) as DbFile[];
 }
 
-export async function getSessions(limit = 50): Promise<DbSession[]> {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from("sessions")
+export async function deleteProjectFiles(projectId: string): Promise<void> {
+  const { error } = await getClient()
+    .from("files")
+    .delete()
+    .eq("project_id", projectId);
+  if (error) throw new DbError(error.message);
+}
+
+export async function getProject(id: string): Promise<DbProject | null> {
+  const { data, error } = await getClient()
+    .from("projects")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error?.code === "PGRST116") return null;
+  if (error) throw new DbError(error.message);
+  return data as DbProject;
+}
+
+export async function getProjects(): Promise<DbProject[]> {
+  const { data, error } = await getClient()
+    .from("projects")
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    throw new DbError(error.message);
-  }
-
-  return (data ?? []) as DbSession[];
+    .limit(50);
+  if (error) throw new DbError(error.message);
+  return (data ?? []) as DbProject[];
 }
 
-export async function getSessionRounds(sessionId: string): Promise<DbRound[]> {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from("rounds")
+export async function getProjectFiles(projectId: string): Promise<DbFile[]> {
+  const { data, error } = await getClient()
+    .from("files")
     .select("*")
-    .eq("session_id", sessionId)
-    .order("round_number", { ascending: true });
-
-  if (error) {
-    throw new DbError(error.message);
-  }
-
-  return (data ?? []) as DbRound[];
+    .eq("project_id", projectId)
+    .order("sort_order", { ascending: true });
+  if (error) throw new DbError(error.message);
+  return (data ?? []) as DbFile[];
 }
 
-export async function getSessionById(
-  sessionId: string
-): Promise<DbSession | null> {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from("sessions")
+export async function getFile(id: string): Promise<DbFile | null> {
+  const { data, error } = await getClient()
+    .from("files")
     .select("*")
-    .eq("id", sessionId)
+    .eq("id", id)
     .single();
+  if (error?.code === "PGRST116") return null;
+  if (error) throw new DbError(error.message);
+  return data as DbFile;
+}
 
-  if (error) {
-    if (error.code === "PGRST116") return null;
-    throw new DbError(error.message);
-  }
+export async function updateFileStatus(
+  id: string,
+  status: FileStatus
+): Promise<void> {
+  const { error } = await getClient()
+    .from("files")
+    .update({ status })
+    .eq("id", id);
+  if (error) throw new DbError(error.message);
+}
 
-  return data as DbSession;
+export async function completeFile(
+  id: string,
+  content: string,
+  score: number,
+  roundsTaken: number
+): Promise<void> {
+  const { error } = await getClient()
+    .from("files")
+    .update({
+      content,
+      score,
+      rounds_taken: roundsTaken,
+      status: "done",
+    })
+    .eq("id", id);
+  if (error) throw new DbError(error.message);
+}
+
+export async function saveFileRound(
+  fileId: string,
+  round: number,
+  task: FileTask,
+  score: number,
+  code?: string,
+  review?: string
+): Promise<void> {
+  const { error } = await getClient().from("file_rounds").insert({
+    file_id: fileId,
+    round_number: round,
+    task,
+    score,
+    code: code ?? null,
+    review: review ?? null,
+  });
+  if (error) throw new DbError(error.message);
+}
+
+export async function addMessage(
+  projectId: string,
+  role: "user" | "assistant",
+  content: string,
+  type: MessageType = "chat",
+  metadata: Record<string, unknown> = {}
+): Promise<DbMessage> {
+  const { data, error } = await getClient()
+    .from("messages")
+    .insert({ project_id: projectId, role, content, type, metadata })
+    .select()
+    .single();
+  if (error || !data) throw new DbError(error?.message ?? "Failed to save message");
+  return data as DbMessage;
+}
+
+export async function getMessages(projectId: string): Promise<DbMessage[]> {
+  const { data, error } = await getClient()
+    .from("messages")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: true });
+  if (error) throw new DbError(error.message);
+  return (data ?? []) as DbMessage[];
+}
+
+export async function getCompletedFilesContext(
+  projectId: string
+): Promise<string> {
+  const files = await getProjectFiles(projectId);
+  const done = files.filter((f) => f.status === "done" && f.content);
+  if (done.length === 0) return "No files completed yet.";
+  return done
+    .map((f) => `--- ${f.file_path} ---\n${f.content?.slice(0, 2000)}`)
+    .join("\n\n");
 }

@@ -1,51 +1,62 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { Iteration, LoopStatus, ViewMode } from "@/app/lib/types";
-import OutputCard from "./OutputCard";
+import type {
+  BuildPhase,
+  ChatMessage,
+  DbFile,
+  FileRoundEvent,
+  ProjectPlan,
+} from "@/app/lib/agentTypes";
+import MessageBubble from "./MessageBubble";
+import PlanCard from "./PlanCard";
+import ConfirmButtons from "./ConfirmButtons";
+import ProgressCard from "./ProgressCard";
+import SummaryCard from "./SummaryCard";
 
 type ChatAreaProps = {
-  iterations: Iteration[];
-  status: LoopStatus;
-  finalRound: number | null;
-  targetDescription: string;
-  viewMode: ViewMode;
-  scoreThreshold: number;
-  jsonMode: boolean;
+  messages: ChatMessage[];
+  plan: ProjectPlan | null;
+  phase: BuildPhase;
+  statusMessage: string;
+  showConfirm: boolean;
+  activeProgress: { fileName: string; round: FileRoundEvent | null } | null;
+  summaryPlan: ProjectPlan | null;
+  files: DbFile[];
+  onConfirm: () => void;
+  onMakeChanges: () => void;
+  onDownload: () => void;
+  confirmDisabled: boolean;
+  isLoading: boolean;
 };
 
-const ACTIVE_STATUSES: LoopStatus[] = [
-  "generating",
-  "critiquing",
-  "refining",
-];
-
 export default function ChatArea({
-  iterations,
-  status,
-  finalRound,
-  targetDescription,
-  viewMode,
-  scoreThreshold,
-  jsonMode,
+  messages,
+  plan,
+  phase,
+  statusMessage,
+  showConfirm,
+  activeProgress,
+  summaryPlan,
+  files,
+  onConfirm,
+  onMakeChanges,
+  onDownload,
+  confirmDisabled,
+  isLoading,
 }: ChatAreaProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  const isActive = viewMode === "live" && ACTIVE_STATUSES.includes(status);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [iterations.length, status]);
+  }, [messages.length, statusMessage, activeProgress, phase]);
+
+  const displayPlan = summaryPlan ?? plan;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      {viewMode === "history" && (
-        <div className="border-b border-accent/30 bg-accent/10 px-4 py-2 text-center text-sm text-accent sm:px-6">
-          Viewing past session — read only
-        </div>
-      )}
-
       <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-        {iterations.length === 0 && !isActive ? (
+        {messages.length === 0 && phase === "idle" && !isLoading ? (
           <div className="flex h-full min-h-[200px] flex-col items-center justify-center text-center">
             <div className="mb-4 rounded-full bg-surface-raised p-4">
               <svg
@@ -58,43 +69,67 @@ export default function ChatArea({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={1.5}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
                 />
               </svg>
             </div>
             <h2 className="text-lg font-semibold text-white">RefineAI</h2>
             <p className="mt-2 max-w-md text-sm text-gray-400">
-              Describe your target output below. The AI will generate, critique,
-              and refine in a loop until quality reaches {scoreThreshold}%+.
+              Describe your app idea below. I&apos;ll plan the project, ask for
+              your confirmation, then build each file with automatic review and
+              refinement.
             </p>
           </div>
         ) : (
-          <div className="mx-auto max-w-3xl space-y-4">
-            {targetDescription && (
-              <div className="rounded-xl border border-surface-border bg-surface-raised/50 p-4">
-                <p className="mb-1 text-xs font-medium uppercase tracking-wider text-gray-500">
-                  Your Target
-                </p>
-                <p className="text-sm text-gray-200">{targetDescription}</p>
-              </div>
-            )}
-            {iterations.map((iteration) => (
-              <OutputCard
-                key={iteration.round}
-                iteration={iteration}
-                isFinal={finalRound === iteration.round}
-                scoreThreshold={scoreThreshold}
-                jsonMode={jsonMode}
-              />
+          <div className="mx-auto max-w-3xl space-y-2">
+            {messages.map((msg) => (
+              <MessageBubble key={msg.id} role={msg.role} content={msg.content}>
+                {msg.type === "plan" && msg.metadata?.plan ? (
+                  <PlanCard plan={msg.metadata.plan as ProjectPlan} />
+                ) : null}
+              </MessageBubble>
             ))}
-            {isActive && (
+
+            {plan && phase === "awaiting_confirm" && !messages.some((m) => m.type === "plan") && (
+              <MessageBubble role="assistant" content="">
+                <PlanCard plan={plan} />
+              </MessageBubble>
+            )}
+
+            {showConfirm && plan && (
+              <MessageBubble role="assistant" content="Ready when you are.">
+                <ConfirmButtons
+                  onConfirm={onConfirm}
+                  onChanges={onMakeChanges}
+                  disabled={confirmDisabled}
+                />
+              </MessageBubble>
+            )}
+
+            {(phase === "building" || phase === "testing") && statusMessage && (
               <div className="flex items-center gap-3 rounded-xl border border-surface-border bg-surface-raised/50 p-4">
                 <div className="h-5 w-5 motion-safe:animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                <span className="text-sm text-gray-400">
-                  Working on the next round...
-                </span>
+                <span className="text-sm text-gray-300">{statusMessage}</span>
               </div>
             )}
+
+            {activeProgress && (
+              <ProgressCard
+                fileName={activeProgress.fileName}
+                round={activeProgress.round}
+              />
+            )}
+
+            {phase === "complete" && displayPlan && (
+              <MessageBubble role="assistant" content="">
+                <SummaryCard
+                  plan={displayPlan}
+                  files={files}
+                  onDownload={onDownload}
+                />
+              </MessageBubble>
+            )}
+
             <div ref={bottomRef} />
           </div>
         )}

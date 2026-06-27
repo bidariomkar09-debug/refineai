@@ -1,84 +1,99 @@
 "use client";
 
-import type { DbSession } from "@/app/lib/db";
-import type { Iteration } from "@/app/lib/types";
-import { TASK_LABELS } from "@/app/lib/types";
-import SessionHistory from "./SessionHistory";
+import type { DbProject } from "@/app/lib/agentTypes";
 
 type SidebarProps = {
-  iterations: Iteration[];
-  sessions: DbSession[];
-  activeSessionId: string | null;
-  sessionsLoading: boolean;
+  projects: DbProject[];
+  activeProjectId: string | null;
+  isLoading: boolean;
   isOpen: boolean;
   onClose: () => void;
-  onSelectRound: (round: number) => void;
-  onSelectSession: (session: DbSession) => void;
-  onNewSession: () => void;
-  activeRound: number | null;
+  onSelectProject: (project: DbProject) => void;
+  onNewProject: () => void;
 };
 
+const STATUS_BADGE: Record<string, string> = {
+  planning: "bg-yellow-500/20 text-yellow-400",
+  building: "bg-accent/20 text-accent",
+  complete: "bg-accent-green/20 text-accent-green",
+  error: "bg-red-500/20 text-red-400",
+  paused: "bg-gray-500/20 text-gray-400",
+};
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export default function Sidebar({
-  iterations,
-  sessions,
-  activeSessionId,
-  sessionsLoading,
+  projects,
+  activeProjectId,
+  isLoading,
   isOpen,
   onClose,
-  onSelectRound,
-  onSelectSession,
-  onNewSession,
-  activeRound,
+  onSelectProject,
+  onNewProject,
 }: SidebarProps) {
-  const roundsContent = (
-    <div className="flex min-h-0 flex-1 flex-col">
+  const content = (
+    <div className="flex h-full flex-col">
+      <div className="border-b border-surface-border px-4 py-3">
+        <button
+          type="button"
+          onClick={() => {
+            onNewProject();
+            onClose();
+          }}
+          className="w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-600"
+        >
+          + New Project
+        </button>
+      </div>
+
       <div className="border-b border-surface-border px-4 py-3">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-          Round History
+          Past Projects
         </h2>
-        <p className="mt-1 text-xs text-gray-500">
-          {iterations.length === 0
-            ? "No rounds yet"
-            : `${iterations.length} round${iterations.length === 1 ? "" : "s"}`}
-        </p>
       </div>
+
       <nav className="flex-1 overflow-y-auto p-3">
-        {iterations.length === 0 ? (
+        {isLoading ? (
+          <p className="px-2 py-4 text-sm text-gray-500">Loading...</p>
+        ) : projects.length === 0 ? (
           <p className="px-2 py-4 text-sm text-gray-500">
-            Rounds will appear here as the loop runs.
+            Your projects will appear here.
           </p>
         ) : (
           <ul className="space-y-1.5">
-            {iterations.map((iteration) => (
-              <li key={iteration.round}>
+            {projects.map((project) => (
+              <li key={project.id}>
                 <button
                   type="button"
                   onClick={() => {
-                    onSelectRound(iteration.round);
+                    onSelectProject(project);
                     onClose();
                   }}
                   className={`w-full rounded-lg px-3 py-2.5 text-left transition ${
-                    activeRound === iteration.round
+                    activeProjectId === project.id
                       ? "bg-accent/20 text-white"
                       : "text-gray-300 hover:bg-surface-border/50"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">
-                      Round {iteration.round}
+                    <span className="truncate text-sm font-medium">
+                      {project.name}
                     </span>
                     <span
-                      className={`text-xs font-bold tabular-nums ${
-                        iteration.score >= 90
-                          ? "text-accent-green"
-                          : "text-gray-400"
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize ${
+                        STATUS_BADGE[project.status] ?? STATUS_BADGE.planning
                       }`}
                     >
-                      {iteration.score}%
+                      {project.status}
                     </span>
                   </div>
                   <span className="mt-0.5 block text-xs text-gray-500">
-                    {TASK_LABELS[iteration.task]}
+                    {formatDate(project.created_at)}
                   </span>
                 </button>
               </li>
@@ -89,28 +104,13 @@ export default function Sidebar({
     </div>
   );
 
-  const content = (
-    <div className="flex h-full flex-col">
-      <SessionHistory
-        sessions={sessions}
-        activeSessionId={activeSessionId}
-        isLoading={sessionsLoading}
-        onSelectSession={(session) => {
-          onSelectSession(session);
-          onClose();
-        }}
-        onNewSession={() => {
-          onNewSession();
-          onClose();
-        }}
-      />
-      {roundsContent}
-    </div>
-  );
-
   return (
     <>
       <aside className="hidden h-full w-72 shrink-0 border-r border-surface-border bg-surface-raised md:flex md:flex-col">
+        <div className="border-b border-surface-border px-4 py-4">
+          <h1 className="text-lg font-bold text-white">RefineAI</h1>
+          <p className="text-xs text-gray-500">AI Coding Agent</p>
+        </div>
         {content}
       </aside>
 
@@ -135,9 +135,7 @@ export default function Sidebar({
             className="rounded-lg p-1.5 text-gray-400 hover:bg-surface-border hover:text-white"
             aria-label="Close sidebar"
           >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            ✕
           </button>
         </div>
         {content}
@@ -146,13 +144,7 @@ export default function Sidebar({
   );
 }
 
-export function SidebarToggle({
-  onClick,
-  sessionCount,
-}: {
-  onClick: () => void;
-  sessionCount: number;
-}) {
+export function SidebarToggle({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
@@ -164,11 +156,19 @@ export function SidebarToggle({
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
       </svg>
       Menu
-      {sessionCount > 0 && (
-        <span className="rounded-full bg-accent/20 px-1.5 py-0.5 text-xs font-medium text-accent">
-          {sessionCount}
-        </span>
-      )}
+    </button>
+  );
+}
+
+export function FileBuilderToggle({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-2 rounded-lg border border-surface-border bg-surface-raised px-3 py-2 text-sm text-gray-300 transition hover:border-gray-600 hover:text-white lg:hidden"
+      aria-label="Open file builder"
+    >
+      Files
     </button>
   );
 }

@@ -1,17 +1,41 @@
 "use client";
 
 import { useState, useCallback, type KeyboardEvent } from "react";
+import type { BuildPhase } from "@/app/lib/agentTypes";
 
 type InputBoxProps = {
-  onSubmit: (target: string) => void;
+  onSubmit: (text: string) => void;
   disabled: boolean;
   isLoading: boolean;
+  phase: BuildPhase;
+  awaitingChanges: boolean;
 };
+
+function getPlaceholder(phase: BuildPhase, awaitingChanges: boolean): string {
+  if (awaitingChanges) {
+    return "Describe what you'd like to change in the plan...";
+  }
+  if (phase === "building" || phase === "testing") {
+    return "Send a message while building (e.g. make the UI dark)...";
+  }
+  if (phase === "awaiting_confirm") {
+    return "Or type changes to the plan here...";
+  }
+  return "Describe your app idea... (e.g. Build a healthcare AI agent for patient intake)";
+}
+
+function getButtonLabel(isLoading: boolean, phase: BuildPhase): string {
+  if (isLoading) return "Working...";
+  if (phase === "idle" || phase === "planning") return "Plan Project";
+  return "Send";
+}
 
 export default function InputBox({
   onSubmit,
   disabled,
   isLoading,
+  phase,
+  awaitingChanges,
 }: InputBoxProps) {
   const [value, setValue] = useState("");
 
@@ -37,7 +61,7 @@ export default function InputBox({
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={disabled}
-          placeholder="Describe your target output... (e.g. Write a haiku about rain)"
+          placeholder={getPlaceholder(phase, awaitingChanges)}
           rows={2}
           className="flex-1 resize-none rounded-xl border border-surface-border bg-surface-raised px-4 py-3 text-sm text-white placeholder-gray-500 outline-none transition focus:border-accent disabled:cursor-not-allowed disabled:opacity-50"
         />
@@ -50,16 +74,13 @@ export default function InputBox({
           {isLoading ? (
             <span className="flex items-center gap-2">
               <span className="inline-block h-4 w-4 motion-safe:animate-spin rounded-full border-2 border-white border-t-transparent" />
-              Running
+              Working
             </span>
           ) : (
-            "Start Loop"
+            getButtonLabel(isLoading, phase)
           )}
         </button>
       </div>
-      <p className="mx-auto mt-2 max-w-3xl text-xs text-gray-500">
-        Press Enter to start. Shift+Enter for new line.
-      </p>
     </div>
   );
 }
