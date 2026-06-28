@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type RecentProject = {
   id: string;
@@ -61,7 +61,8 @@ function ActionCard({
 
 export default function LaunchScreen() {
   const router = useRouter();
-  const [recent, setRecent] = useState<RecentProject[]>([]);
+  const [projects, setProjects] = useState<RecentProject[]>([]);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [showClone, setShowClone] = useState(false);
   const [cloneUrl, setCloneUrl] = useState("");
@@ -71,10 +72,21 @@ export default function LaunchScreen() {
   useEffect(() => {
     fetch("/api/projects?stats=true")
       .then((r) => r.json())
-      .then((data) => setRecent((data.projects ?? []).slice(0, 5)))
-      .catch(() => setRecent([]))
+      .then((data) => setProjects(data.projects ?? []))
+      .catch(() => setProjects([]))
       .finally(() => setLoading(false));
   }, []);
+
+  const filteredProjects = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return projects.slice(0, 5);
+    return projects.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        (p.niche?.toLowerCase().includes(q) ?? false) ||
+        p.status.toLowerCase().includes(q)
+    );
+  }, [projects, search]);
 
   const handleClone = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,20 +163,47 @@ export default function LaunchScreen() {
           />
         </div>
 
-        {/* Recent projects */}
+        {/* Search + recent projects */}
         <div className="mt-10">
-          <p className="mb-3 text-xs text-gray-500">Recent projects</p>
+          <div className="relative mb-3">
+            <svg
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+              />
+            </svg>
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search projects…"
+              className="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] py-2.5 pl-9 pr-4 text-sm text-white placeholder:text-gray-600 transition-colors focus:border-white/20 focus:bg-white/[0.05] focus:outline-none"
+            />
+          </div>
+
+          <p className="mb-3 text-xs text-gray-500">
+            {search.trim() ? "Search results" : "Recent projects"}
+          </p>
           {loading ? (
             <div className="space-y-2">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="h-9 animate-pulse rounded-md bg-white/[0.04]" />
               ))}
             </div>
-          ) : recent.length === 0 ? (
-            <p className="text-sm text-gray-600">No recent projects</p>
+          ) : filteredProjects.length === 0 ? (
+            <p className="text-sm text-gray-600">
+              {search.trim() ? "No projects match your search" : "No recent projects"}
+            </p>
           ) : (
             <ul className="space-y-0.5">
-              {recent.map((p) => (
+              {filteredProjects.map((p) => (
                 <li key={p.id}>
                   <Link
                     href={`/workspace?projectId=${p.id}`}
@@ -180,16 +219,6 @@ export default function LaunchScreen() {
             </ul>
           )}
         </div>
-
-        {/* Footer */}
-        <p className="mt-14 text-center">
-          <Link
-            href="/agents"
-            className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.03] px-4 py-2 text-xs text-gray-400 transition-colors hover:border-white/15 hover:text-gray-300"
-          >
-            Try building with parallel agents →
-          </Link>
-        </p>
       </div>
 
       {/* Clone modal */}
