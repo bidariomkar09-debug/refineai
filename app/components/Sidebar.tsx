@@ -9,7 +9,6 @@ type SidebarProps = {
   activeFileId: string | null;
   isOpen: boolean;
   onClose: () => void;
-  onNewProject: () => void;
   onSelectFile: (file: ExplorerFile) => void;
   tabletExpanded?: boolean;
   onTabletExpand?: () => void;
@@ -19,25 +18,13 @@ export function SidebarContent({
   mergedFiles,
   selectedFileId,
   activeFileId,
-  onClose,
-  onNewProject,
   onSelectFile,
-}: Omit<SidebarProps, "isOpen" | "tabletExpanded" | "onTabletExpand">) {
+}: Omit<SidebarProps, "isOpen" | "onClose" | "tabletExpanded" | "onTabletExpand">) {
   return (
     <div className="flex h-full flex-col">
       <div className="shrink-0 border-b border-surface-border px-3 py-3">
         <h1 className="text-base font-bold text-white">RefineAI</h1>
-        <p className="mb-2 text-[10px] text-gray-500">AI Coding Agent</p>
-        <button
-          type="button"
-          onClick={() => {
-            onNewProject();
-            onClose();
-          }}
-          className="min-h-[44px] w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-600"
-        >
-          + New Project
-        </button>
+        <p className="text-[10px] text-gray-500">AI Coding Agent</p>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
@@ -66,7 +53,7 @@ export default function Sidebar(props: SidebarProps) {
     <>
       {/* Desktop lg+ full sidebar */}
       <aside className="hidden h-full w-72 shrink-0 border-r border-surface-border bg-surface-raised lg:flex lg:flex-col">
-        <SidebarContent {...contentProps} onClose={onClose} />
+        <SidebarContent {...contentProps} />
       </aside>
 
       {/* Tablet md–lg icon rail */}
@@ -74,23 +61,11 @@ export default function Sidebar(props: SidebarProps) {
         <button
           type="button"
           onClick={onTabletExpand}
-          className="touch-target touch-press mb-3 rounded-lg p-2 text-accent hover:bg-surface-border"
+          className="touch-target touch-press rounded-lg p-2 text-accent hover:bg-surface-border"
           aria-label="Expand file explorer"
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V6A2.25 2.25 0 014.5 3.75h4.318a2.25 2.25 0 011.591.659l1.182 1.182A2.25 2.25 0 0015.318 6H19.5A2.25 2.25 0 0121.75 8.25v9.5A2.25 2.25 0 0119.5 20.25H4.5A2.25 2.25 0 012.25 18V12.75z" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            contentProps.onNewProject();
-          }}
-          className="touch-target touch-press rounded-lg p-2 text-accent hover:bg-surface-border"
-          aria-label="New project"
-        >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
         </button>
       </aside>
@@ -115,7 +90,7 @@ export default function Sidebar(props: SidebarProps) {
                 ✕
               </button>
             </div>
-            <SidebarContent {...contentProps} onClose={onClose} />
+            <SidebarContent {...contentProps} />
           </aside>
         </>
       )}

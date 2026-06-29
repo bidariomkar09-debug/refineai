@@ -297,33 +297,6 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
     URL.revokeObjectURL(url);
   }, [files, plan]);
 
-  const handleNewProject = useCallback(() => {
-    buildAbortRef.current?.abort();
-    activeFileIdRef.current = null;
-    setProjectId(null);
-    setPlan(null);
-    setSummaryPlan(null);
-    setFiles([]);
-    setMessages([]);
-    setPhase("idle");
-    setStatusMessage("");
-    setShowConfirm(false);
-    setAwaitingChanges(false);
-    setPlanIntro(null);
-    setCenterTab("plan");
-    setSelectedFileId(null);
-    setViewerCode("");
-    setActiveFile(null);
-    setCurrentCode("");
-    setCurrentRound(null);
-    setActiveProgress(null);
-    setPreviewStatus("idle");
-    setPreviewLogs([]);
-    setTerminalOpen(false);
-    setPreviewLastUpdated(null);
-    wasPreviewRunningRef.current = false;
-  }, []);
-
   const loadProject = useCallback(async (project: DbProject) => {
     buildAbortRef.current?.abort();
     activeFileIdRef.current = null;
@@ -791,7 +764,6 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           activeFileId={activeFile?.id ?? null}
           isOpen={sidebarOpen}
           onClose={() => setTabletSidebarExpanded(false)}
-          onNewProject={handleNewProject}
           onSelectFile={handleSelectFile}
           tabletExpanded={tabletSidebarExpanded}
           onTabletExpand={() => setTabletSidebarExpanded(true)}
@@ -897,8 +869,6 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           mergedFiles={mergedFiles}
           selectedFileId={selectedFileId}
           activeFileId={activeFile?.id ?? null}
-          onClose={() => setFileSheetOpen(false)}
-          onNewProject={handleNewProject}
           onSelectFile={handleSelectFile}
         />
       </BottomSheet>
