@@ -123,6 +123,12 @@ export type FileRoundEvent = {
   score: number;
   code?: string;
   review?: string;
+  critique?: string;
+  inputContext: string;
+  modelUsed: string;
+  scoreBefore: number;
+  output: string;
+  improvement: string;
 };
 
 export type BuildCompleteEvent = {

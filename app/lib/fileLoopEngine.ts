@@ -4,7 +4,7 @@ import {
   type FileRoundEvent,
   type FileTask,
 } from "./agentTypes";
-import { callFileTask } from "./agentAI";
+import { callFileTask, describeImprovement } from "./agentAI";
 
 export type FileLoopContext = {
   filePath: string;
@@ -33,11 +33,15 @@ export async function runFileLoop(
   let currentCode = "";
   let lastReview = "";
   let score = 0;
+  let previousScore = 0;
   let round = 1;
   let totalTokens = 0;
 
   const runTask = async (task: FileTask): Promise<void> => {
     if (signal?.aborted) throw new Error("aborted");
+
+    const prevCode = currentCode;
+    const scoreBefore = previousScore;
 
     const result = await callFileTask({
       task,
@@ -51,6 +55,7 @@ export async function runFileLoop(
     });
 
     totalTokens += result.tokens;
+    previousScore = score;
     score = result.score;
 
     if (task === "review") {
@@ -61,6 +66,11 @@ export async function runFileLoop(
         score,
         review: lastReview,
         code: currentCode,
+        inputContext: result.inputContext,
+        modelUsed: result.modelUsed,
+        scoreBefore,
+        output: lastReview,
+        improvement: describeImprovement(task, prevCode, currentCode),
       });
     } else {
       currentCode = result.code ?? currentCode;
@@ -69,6 +79,12 @@ export async function runFileLoop(
         task,
         score,
         code: currentCode,
+        critique: task === "refine" ? lastReview || undefined : undefined,
+        inputContext: result.inputContext,
+        modelUsed: result.modelUsed,
+        scoreBefore,
+        output: currentCode,
+        improvement: describeImprovement(task, prevCode, currentCode),
       });
     }
   };

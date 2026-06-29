@@ -1,10 +1,13 @@
 import { NextRequest } from "next/server";
 import {
   completeFile,
+  finalizeTrainingData,
   getCompletedFilesContext,
   getFile,
+  getMessages,
   getProject,
   saveFileRound,
+  saveTrainingData,
   updateFileStatus,
 } from "@/app/lib/db";
 import { runFileLoop, checkSyntax } from "@/app/lib/fileLoopEngine";
@@ -14,6 +17,14 @@ import {
   meetsQualityThreshold,
   type ProjectPlan,
 } from "@/app/lib/agentTypes";
+
+function buildTrainingTarget(
+  userIdea: string,
+  filePath: string,
+  filePurpose: string
+): string {
+  return `${userIdea} — File: ${filePath} (${filePurpose})`;
+}
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -48,11 +59,18 @@ export async function POST(request: NextRequest) {
     const completedFiles = await getCompletedFilesContext(projectId);
     const projectContext = `Project: ${plan.name}\nDescription: ${plan.description}\nStack: ${JSON.stringify(plan.techStack)}`;
 
+    const messages = await getMessages(projectId);
+    const userIdea =
+      messages.find((m) => m.role === "user")?.content ?? project.description;
+    const filePurpose = plannedFile?.purpose ?? file.file_name;
+    const target = buildTrainingTarget(userIdea, file.file_path, filePurpose);
+    const trainingRowIds: string[] = [];
+
     try {
       const result = await runFileLoop(
         {
           filePath: file.file_path,
-          filePurpose: plannedFile?.purpose ?? file.file_name,
+          filePurpose,
           projectContext,
           completedFiles,
         },
@@ -67,6 +85,31 @@ export async function POST(request: NextRequest) {
               event.code,
               event.review
             );
+
+            try {
+              const critique =
+                event.task === "review"
+                  ? event.review ?? event.output
+                  : event.task === "refine"
+                    ? event.critique ?? null
+                    : null;
+
+              const id = await saveTrainingData({
+                session_id: projectId,
+                target,
+                round_number: event.round,
+                input_context: event.inputContext,
+                output: event.output,
+                critique,
+                score_before: event.scoreBefore,
+                score_after: event.score,
+                improvement: event.improvement,
+                model_used: event.modelUsed,
+              });
+              trainingRowIds.push(id);
+            } catch (err) {
+              console.error("Failed to save training data:", err);
+            }
           },
           onStatus: (msg) => send({ type: "status", message: msg }),
         }
@@ -80,7 +123,15 @@ export async function POST(request: NextRequest) {
         send({ type: "status", message: USER_MESSAGES.fixing });
       }
 
-      if (!meetsQualityThreshold(finalScore)) {
+      const wasSuccessful = meetsQualityThreshold(finalScore);
+
+      try {
+        await finalizeTrainingData(trainingRowIds, finalContent, wasSuccessful);
+      } catch (err) {
+        console.error("Failed to finalize training data:", err);
+      }
+
+      if (!wasSuccessful) {
         send({ type: "status", message: USER_MESSAGES.fixing });
         await updateFileStatus(fileId, "building");
         return;
@@ -101,6 +152,11 @@ export async function POST(request: NextRequest) {
         },
       });
     } catch {
+      try {
+        await finalizeTrainingData(trainingRowIds, "", false);
+      } catch (err) {
+        console.error("Failed to finalize training data:", err);
+      }
       send({ type: "status", message: USER_MESSAGES.fixing });
       await updateFileStatus(fileId, "error");
     }

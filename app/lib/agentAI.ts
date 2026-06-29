@@ -70,7 +70,11 @@ Respond with valid JSON only:
 - write/refine: { "code": "<full file content>", "score": <0-100> }
 - review: { "review": "<detailed code review>", "score": <0-100> }`;
 
-export async function callFileTask(params: {
+export const FILE_TASK_SYSTEM_PROMPT = `You are RefineAI, an expert software engineer. ${FILE_TASK_SCHEMA}
+Score honestly: 95+ means production-ready code with no bugs.
+Output ONLY the file content in "code" field — no markdown fences inside the code string.`;
+
+export function buildFileTaskUserPrompt(params: {
   task: FileTask;
   filePath: string;
   filePurpose: string;
@@ -79,11 +83,7 @@ export async function callFileTask(params: {
   currentCode?: string;
   lastReview?: string;
   round: number;
-}): Promise<FileTaskResult & { tokens: number }> {
-  const system = `You are RefineAI, an expert software engineer. ${FILE_TASK_SCHEMA}
-Score honestly: 95+ means production-ready code with no bugs.
-Output ONLY the file content in "code" field — no markdown fences inside the code string.`;
-
+}): string {
   const userParts = [
     `[Project Context]\n${params.projectContext}`,
     `[Completed Files]\n${params.completedFiles}`,
@@ -100,11 +100,42 @@ Output ONLY the file content in "code" field — no markdown fences inside the c
     userParts.push(`[Last Review]:\n${params.lastReview}`);
   }
 
+  return userParts.join("\n\n");
+}
+
+export function describeImprovement(
+  task: FileTask,
+  prevCode: string,
+  newCode: string
+): string {
+  if (task === "write") return "Initial generation";
+  if (task === "review") return "Quality review";
+  if (prevCode && newCode && prevCode !== newCode) {
+    const prevLines = prevCode.split("\n").length;
+    const newLines = newCode.split("\n").length;
+    return `Refined based on critique (${prevLines} → ${newLines} lines)`;
+  }
+  return "Refined based on critique";
+}
+
+export async function callFileTask(params: {
+  task: FileTask;
+  filePath: string;
+  filePurpose: string;
+  projectContext: string;
+  completedFiles: string;
+  currentCode?: string;
+  lastReview?: string;
+  round: number;
+}): Promise<FileTaskResult & { tokens: number; inputContext: string; modelUsed: string }> {
+  const inputContext = buildFileTaskUserPrompt(params);
+  const modelUsed = getModel();
+
   const { data, tokens } = await generateJSON<{
     code?: string;
     review?: string;
     score: number;
-  }>(system, userParts.join("\n\n"));
+  }>(FILE_TASK_SYSTEM_PROMPT, inputContext, modelUsed);
 
   const score = clampScore(data.score);
 
@@ -113,6 +144,8 @@ Output ONLY the file content in "code" field — no markdown fences inside the c
       review: data.review ?? "",
       score,
       tokens,
+      inputContext,
+      modelUsed,
     };
   }
 
@@ -120,6 +153,8 @@ Output ONLY the file content in "code" field — no markdown fences inside the c
     code: data.code ?? params.currentCode ?? "",
     score,
     tokens,
+    inputContext,
+    modelUsed,
   };
 }
 

@@ -52,6 +52,31 @@ export type DatasetFile = {
   created_at: string;
 };
 
+export type TrainingDataRow = {
+  id: string;
+  session_id: string;
+  target: string;
+  round_number: number;
+  input_context: string;
+  output: string;
+  critique: string | null;
+  score_before: number;
+  score_after: number;
+  improvement: string | null;
+  final_output: string | null;
+  was_successful: boolean;
+  model_used: string;
+  created_at: string;
+};
+
+export type TrainingDataInsert = Omit<
+  TrainingDataRow,
+  "id" | "final_output" | "was_successful" | "created_at"
+> & {
+  final_output?: string | null;
+  was_successful?: boolean;
+};
+
 export type EvaluationStats = {
   projectScores: Array<{ name: string; score: number }>;
   roundScores: Array<{ round: number; score: number }>;

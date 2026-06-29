@@ -15,6 +15,8 @@ import type {
   DatasetFile,
   EvaluationStats,
   ProjectWithStats,
+  TrainingDataInsert,
+  TrainingDataRow,
   UserSettings,
 } from "./settingsTypes";
 
@@ -485,4 +487,75 @@ export async function getEvaluationStats(): Promise<EvaluationStats> {
     totalFilesBuilt: files?.length ?? 0,
     commonIssues: commonIssues.length > 0 ? commonIssues : ["No critique data yet"],
   };
+}
+
+// --- Training data ---
+
+export async function saveTrainingData(
+  row: TrainingDataInsert
+): Promise<string> {
+  const { data, error } = await getClient()
+    .from("training_data")
+    .insert({
+      session_id: row.session_id,
+      target: row.target,
+      round_number: row.round_number,
+      input_context: row.input_context,
+      output: row.output,
+      critique: row.critique ?? null,
+      score_before: row.score_before,
+      score_after: row.score_after,
+      improvement: row.improvement ?? null,
+      final_output: row.final_output ?? null,
+      was_successful: row.was_successful ?? false,
+      model_used: row.model_used,
+    })
+    .select("id")
+    .single();
+  if (error || !data) throw new DbError(error?.message ?? "Failed to save training data");
+  return data.id as string;
+}
+
+export async function finalizeTrainingData(
+  ids: string[],
+  finalOutput: string,
+  wasSuccessful: boolean
+): Promise<void> {
+  if (ids.length === 0) return;
+  const { error } = await getClient()
+    .from("training_data")
+    .update({ final_output: finalOutput, was_successful: wasSuccessful })
+    .in("id", ids);
+  if (error) throw new DbError(error.message);
+}
+
+export async function getTrainingDataCount(): Promise<number> {
+  const { count, error } = await getClient()
+    .from("training_data")
+    .select("*", { count: "exact", head: true });
+  if (
+    error?.message?.includes("does not exist") ||
+    error?.message?.includes("Could not find the table") ||
+    error?.code === "PGRST205"
+  ) {
+    return 0;
+  }
+  if (error) throw new DbError(error.message);
+  return count ?? 0;
+}
+
+export async function getAllTrainingData(): Promise<TrainingDataRow[]> {
+  const { data, error } = await getClient()
+    .from("training_data")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (
+    error?.message?.includes("does not exist") ||
+    error?.message?.includes("Could not find the table") ||
+    error?.code === "PGRST205"
+  ) {
+    return [];
+  }
+  if (error) throw new DbError(error.message);
+  return (data ?? []) as TrainingDataRow[];
 }

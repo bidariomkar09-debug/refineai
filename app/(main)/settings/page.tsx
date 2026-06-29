@@ -30,10 +30,12 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [openaiStatus, setOpenaiStatus] = useState<"configured" | "missing" | "unknown">("unknown");
   const [apiKeyInput, setApiKeyInput] = useState("");
+  const [trainingCount, setTrainingCount] = useState(0);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    Promise.all([fetch("/api/settings"), fetch("/api/health")])
-      .then(async ([settingsRes, healthRes]) => {
+    Promise.all([fetch("/api/settings"), fetch("/api/health"), fetch("/api/training-data")])
+      .then(async ([settingsRes, healthRes, trainingRes]) => {
         if (settingsRes.ok) {
           const data = await settingsRes.json();
           const s = data.settings;
@@ -52,6 +54,10 @@ export default function SettingsPage() {
         if (healthRes.ok) {
           const health = await healthRes.json();
           setOpenaiStatus(health.openai === "configured" ? "configured" : "missing");
+        }
+        if (trainingRes.ok) {
+          const training = await trainingRes.json();
+          setTrainingCount(training.count ?? 0);
         }
       })
       .finally(() => setLoading(false));
@@ -89,6 +95,23 @@ export default function SettingsPage() {
     const next = theme === "dark" ? "light" : "dark";
     setForm((f) => ({ ...f, theme: next }));
     setTheme(next);
+  };
+
+  const handleExportTrainingData = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch("/api/training-data/export");
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "refineai-training-data.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading) return <LoadingState />;
@@ -220,6 +243,28 @@ export default function SettingsPage() {
               />
             </div>
           </div>
+        </section>
+
+        <section className="rounded-xl border border-white/10 bg-[#16161f] p-5">
+          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-gray-400">
+            Training Data
+          </h2>
+          <p className="text-sm text-gray-300">
+            {trainingCount === 0
+              ? "No training examples collected yet."
+              : `${trainingCount} training example${trainingCount === 1 ? "" : "s"} collected`}
+          </p>
+          <p className="mt-2 text-xs text-gray-500">
+            Exports raw data plus OpenAI fine-tuning and Hugging Face dataset formats.
+          </p>
+          <button
+            type="button"
+            disabled={trainingCount === 0 || exporting}
+            onClick={handleExportTrainingData}
+            className="mt-4 rounded-lg border border-white/10 px-4 py-2 text-sm text-white hover:border-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {exporting ? "Exporting..." : "Export Training Data"}
+          </button>
         </section>
 
         <section className="rounded-xl border border-white/10 bg-[#16161f] p-5">
