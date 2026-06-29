@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
+import { getModel, getTemperature } from "@/app/lib/agentAI";
 import {
   completeFile,
+  createTrainingSession,
   finalizeTrainingData,
   getCompletedFilesContext,
   getFile,
@@ -12,6 +14,11 @@ import {
 } from "@/app/lib/db";
 import { runFileLoop, checkSyntax } from "@/app/lib/fileLoopEngine";
 import { createSSEStream, sseResponse } from "@/app/lib/streamClient";
+import {
+  detectFileType,
+  detectProjectType,
+  detectTaskType,
+} from "@/app/lib/trainingTags";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
 import {
   meetsQualityThreshold,
@@ -65,6 +72,38 @@ export async function POST(request: NextRequest) {
     const filePurpose = plannedFile?.purpose ?? file.file_name;
     const target = buildTrainingTarget(userIdea, file.file_path, filePurpose);
     const trainingRowIds: string[] = [];
+    let startScore = 0;
+
+    const fileType = detectFileType(file.file_path);
+    const projectType = detectProjectType(project.niche, plan);
+
+    let sessionId: string | null = null;
+    try {
+      const [model, temperature] = await Promise.all([getModel(), getTemperature()]);
+      sessionId = await createTrainingSession(userIdea, model, temperature);
+    } catch {
+      sessionId = null;
+    }
+
+    const finalizeTraining = async (
+      finalContent: string,
+      finalScore: number,
+      roundsTaken: number,
+      wasSuccessful: boolean
+    ) => {
+      if (trainingRowIds.length === 0) return;
+      try {
+        await finalizeTrainingData(trainingRowIds, {
+          finalOutput: finalContent,
+          wasSuccessful,
+          reachedThreshold: wasSuccessful,
+          roundsToComplete: roundsTaken,
+          improvementSummary: `Score ${startScore}→${finalScore} over ${roundsTaken} round${roundsTaken === 1 ? "" : "s"}`,
+        });
+      } catch {
+        // silent
+      }
+    };
 
     try {
       const result = await runFileLoop(
@@ -86,50 +125,57 @@ export async function POST(request: NextRequest) {
               event.review
             );
 
-            try {
-              const critique =
-                event.task === "review"
-                  ? event.review ?? event.output
-                  : event.task === "refine"
-                    ? event.critique ?? null
-                    : null;
-
-              const id = await saveTrainingData({
-                session_id: projectId,
-                target,
-                round_number: event.round,
-                input_context: event.inputContext,
-                output: event.output,
-                critique,
-                score_before: event.scoreBefore,
-                score_after: event.score,
-                improvement: event.improvement,
-                model_used: event.modelUsed,
-              });
-              trainingRowIds.push(id);
-            } catch (err) {
-              console.error("Failed to save training data:", err);
+            if (event.round === 1 && event.task === "write") {
+              startScore = event.scoreBefore;
             }
+
+            const critique =
+              event.task === "review"
+                ? event.review ?? event.output
+                : event.task === "refine"
+                  ? event.critique ?? null
+                  : null;
+
+            const taskType = detectTaskType(event.task, file.file_path, filePurpose);
+
+            void saveTrainingData({
+              session_id: sessionId,
+              project_id: projectId,
+              target,
+              round_number: event.round,
+              input_context: event.inputContext,
+              output: event.output,
+              critique,
+              score_before: event.scoreBefore,
+              score_after: event.score,
+              score_improvement: event.scoreImprovement,
+              improvement_summary: event.improvement,
+              model_used: event.modelUsed,
+              temperature: event.temperature,
+              tokens_used: event.tokensUsed,
+              project_type: projectType,
+              file_type: fileType,
+              task_type: taskType,
+            })
+              .then((id) => {
+                trainingRowIds.push(id);
+              })
+              .catch(() => {});
           },
           onStatus: (msg) => send({ type: "status", message: msg }),
         }
       );
 
       const syntax = checkSyntax(result.content);
-      let finalContent = result.content;
-      let finalScore = result.score;
+      const finalContent = result.content;
+      const finalScore = result.score;
 
       if (!syntax.valid && !meetsQualityThreshold(result.score)) {
         send({ type: "status", message: USER_MESSAGES.fixing });
       }
 
       const wasSuccessful = meetsQualityThreshold(finalScore);
-
-      try {
-        await finalizeTrainingData(trainingRowIds, finalContent, wasSuccessful);
-      } catch (err) {
-        console.error("Failed to finalize training data:", err);
-      }
+      await finalizeTraining(finalContent, finalScore, result.roundsTaken, wasSuccessful);
 
       if (!wasSuccessful) {
         send({ type: "status", message: USER_MESSAGES.fixing });
@@ -152,11 +198,7 @@ export async function POST(request: NextRequest) {
         },
       });
     } catch {
-      try {
-        await finalizeTrainingData(trainingRowIds, "", false);
-      } catch (err) {
-        console.error("Failed to finalize training data:", err);
-      }
+      await finalizeTraining("", 0, 0, false);
       send({ type: "status", message: USER_MESSAGES.fixing });
       await updateFileStatus(fileId, "error");
     }

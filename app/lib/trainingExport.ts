@@ -1,13 +1,24 @@
-import { FILE_TASK_SYSTEM_PROMPT } from "./agentAI";
 import type { TrainingDataRow } from "./settingsTypes";
+
+const OPENAI_SYSTEM_PROMPT =
+  "You are a loop refining AI. Generate high-quality code, review it honestly, and refine based on critique until production-ready.";
 
 export type OpenAIFineTuningExample = {
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
 };
 
+export type HuggingFaceExample = {
+  input: string;
+  context: string;
+  output: string;
+  critique: string | null;
+  refined: string | null;
+  score: number;
+  successful: boolean;
+};
+
 export type HuggingFaceDataset = {
-  features: Record<string, string>;
-  data: Array<Record<string, string | number | boolean | null>>;
+  data: HuggingFaceExample[];
 };
 
 export type TrainingDataExport = {
@@ -20,45 +31,94 @@ export type TrainingDataExport = {
   huggingface: HuggingFaceDataset;
 };
 
+function taskLabel(taskType: string | null): string {
+  switch (taskType) {
+    case "code_review":
+      return "critique the code";
+    case "code_refine":
+      return "critique and refine";
+    default:
+      return "critique and refine";
+  }
+}
+
 export function toOpenAIFineTuning(rows: TrainingDataRow[]): OpenAIFineTuningExample[] {
   return rows.map((row) => ({
     messages: [
-      { role: "system", content: FILE_TASK_SYSTEM_PROMPT },
-      { role: "user", content: row.input_context },
-      { role: "assistant", content: row.output },
+      { role: "system", content: OPENAI_SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: `[TARGET]: ${row.target}\n[ROUND]: ${row.round_number}\n[PREVIOUS OUTPUT]: ${row.output}\n[TASK]: ${taskLabel(row.task_type)}`,
+      },
+      {
+        role: "assistant",
+        content: `${row.final_output ?? row.output}\n[SCORE]: ${row.score_after}`,
+      },
     ],
   }));
 }
 
+export function toOpenAIJSONL(rows: TrainingDataRow[]): string {
+  return toOpenAIFineTuning(rows)
+    .map((example) => JSON.stringify(example))
+    .join("\n");
+}
+
 export function toHuggingFaceDataset(rows: TrainingDataRow[]): HuggingFaceDataset {
   return {
-    features: {
-      instruction: "string",
-      input: "string",
-      output: "string",
-      critique: "string",
-      score_before: "int32",
-      score_after: "int32",
-      improvement: "string",
-      was_successful: "bool",
-      model_used: "string",
-      session_id: "string",
-      round_number: "int32",
-    },
     data: rows.map((row) => ({
-      instruction: row.target,
-      input: row.input_context,
+      input: row.target,
+      context: row.input_context ?? "",
       output: row.output,
       critique: row.critique,
-      score_before: row.score_before,
-      score_after: row.score_after,
-      improvement: row.improvement,
-      was_successful: row.was_successful,
-      model_used: row.model_used,
-      session_id: row.session_id,
-      round_number: row.round_number,
+      refined: row.final_output,
+      score: row.score_after,
+      successful: row.was_successful,
     })),
   };
+}
+
+function escapeCsv(value: string | number | boolean | null | undefined): string {
+  if (value === null || value === undefined) return "";
+  const str = String(value);
+  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+const CSV_COLUMNS: Array<keyof TrainingDataRow> = [
+  "id",
+  "session_id",
+  "project_id",
+  "target",
+  "round_number",
+  "input_context",
+  "output",
+  "critique",
+  "score_before",
+  "score_after",
+  "score_improvement",
+  "improvement_summary",
+  "final_output",
+  "was_successful",
+  "reached_threshold",
+  "rounds_to_complete",
+  "model_used",
+  "temperature",
+  "tokens_used",
+  "project_type",
+  "file_type",
+  "task_type",
+  "created_at",
+];
+
+export function toCSV(rows: TrainingDataRow[]): string {
+  const header = CSV_COLUMNS.join(",");
+  const lines = rows.map((row) =>
+    CSV_COLUMNS.map((col) => escapeCsv(row[col] as string | number | boolean | null)).join(",")
+  );
+  return [header, ...lines].join("\n");
 }
 
 export function buildTrainingDataExport(rows: TrainingDataRow[]): TrainingDataExport {

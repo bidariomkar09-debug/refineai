@@ -69,6 +69,9 @@ export async function runFileLoop(
         inputContext: result.inputContext,
         modelUsed: result.modelUsed,
         scoreBefore,
+        scoreImprovement: score - scoreBefore,
+        tokensUsed: result.tokens,
+        temperature: result.temperature,
         output: lastReview,
         improvement: describeImprovement(task, prevCode, currentCode),
       });
@@ -83,6 +86,9 @@ export async function runFileLoop(
         inputContext: result.inputContext,
         modelUsed: result.modelUsed,
         scoreBefore,
+        scoreImprovement: score - scoreBefore,
+        tokensUsed: result.tokens,
+        temperature: result.temperature,
         output: currentCode,
         improvement: describeImprovement(task, prevCode, currentCode),
       });

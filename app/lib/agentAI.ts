@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { FileTask, ProjectPlan } from "./agentTypes";
+import { getUserSettings } from "./db";
 
 export class OpenAIClientError extends Error {
   constructor(
@@ -23,6 +24,15 @@ export function getModel(): string {
   return process.env.OPENAI_MODEL ?? "gpt-4o";
 }
 
+export async function getTemperature(): Promise<number> {
+  try {
+    const settings = await getUserSettings();
+    return settings.temperature;
+  } catch {
+    return 0.7;
+  }
+}
+
 function clampScore(score: unknown): number {
   const num = typeof score === "number" ? score : Number(score);
   if (Number.isNaN(num)) return 0;
@@ -32,12 +42,13 @@ function clampScore(score: unknown): number {
 export async function generateJSON<T>(
   system: string,
   user: string,
-  model?: string
+  model?: string,
+  temperature = 0.7
 ): Promise<{ data: T; tokens: number }> {
   const client = getOpenAIClient();
   const response = await client.chat.completions.create({
     model: model ?? getModel(),
-    temperature: 0.7,
+    temperature,
     max_tokens: 4096,
     response_format: { type: "json_object" },
     messages: [
@@ -127,15 +138,23 @@ export async function callFileTask(params: {
   currentCode?: string;
   lastReview?: string;
   round: number;
-}): Promise<FileTaskResult & { tokens: number; inputContext: string; modelUsed: string }> {
+}): Promise<
+  FileTaskResult & {
+    tokens: number;
+    inputContext: string;
+    modelUsed: string;
+    temperature: number;
+  }
+> {
   const inputContext = buildFileTaskUserPrompt(params);
   const modelUsed = getModel();
+  const temperature = await getTemperature();
 
   const { data, tokens } = await generateJSON<{
     code?: string;
     review?: string;
     score: number;
-  }>(FILE_TASK_SYSTEM_PROMPT, inputContext, modelUsed);
+  }>(FILE_TASK_SYSTEM_PROMPT, inputContext, modelUsed, temperature);
 
   const score = clampScore(data.score);
 
@@ -146,6 +165,7 @@ export async function callFileTask(params: {
       tokens,
       inputContext,
       modelUsed,
+      temperature,
     };
   }
 
@@ -155,6 +175,7 @@ export async function callFileTask(params: {
     tokens,
     inputContext,
     modelUsed,
+    temperature,
   };
 }
 

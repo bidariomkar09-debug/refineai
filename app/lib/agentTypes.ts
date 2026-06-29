@@ -127,6 +127,9 @@ export type FileRoundEvent = {
   inputContext: string;
   modelUsed: string;
   scoreBefore: number;
+  scoreImprovement: number;
+  tokensUsed: number;
+  temperature: number;
   output: string;
   improvement: string;
 };

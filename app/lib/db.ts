@@ -15,8 +15,12 @@ import type {
   DatasetFile,
   EvaluationStats,
   ProjectWithStats,
+  TrainingDataFilters,
+  TrainingDataFinalize,
   TrainingDataInsert,
   TrainingDataRow,
+  TrainingDataSessionRow,
+  TrainingDataStats,
   UserSettings,
 } from "./settingsTypes";
 
@@ -491,13 +495,60 @@ export async function getEvaluationStats(): Promise<EvaluationStats> {
 
 // --- Training data ---
 
-export async function saveTrainingData(
-  row: TrainingDataInsert
+function isTrainingTableMissing(error: { message?: string; code?: string } | null): boolean {
+  return (
+    !!error?.message?.includes("does not exist") ||
+    !!error?.message?.includes("Could not find the table") ||
+    error?.code === "PGRST205"
+  );
+}
+
+const EMPTY_TRAINING_STATS: TrainingDataStats = {
+  totalExamples: 0,
+  successfulLoops: 0,
+  avgRoundsToComplete: 0,
+  fileTypeBreakdown: [],
+  thisWeekCount: 0,
+  qualityExamples: 0,
+  uniqueFileTypes: 0,
+  readinessPercent: 0,
+  milestones: { bronze: false, silver: false, gold: false, diamond: false },
+};
+
+function buildMilestones(total: number): TrainingDataStats["milestones"] {
+  return {
+    bronze: total >= 100,
+    silver: total >= 500,
+    gold: total >= 1000,
+    diamond: total >= 5000,
+  };
+}
+
+export async function createTrainingSession(
+  target: string,
+  model = "gpt-4o",
+  temperature = 0.7
 ): Promise<string> {
+  const { data, error } = await getClient()
+    .from("sessions")
+    .insert({
+      target,
+      status: "running",
+      model,
+      temperature,
+    })
+    .select("id")
+    .single();
+  if (error || !data) throw new DbError(error?.message ?? "Failed to create training session");
+  return data.id as string;
+}
+
+export async function saveTrainingData(row: TrainingDataInsert): Promise<string> {
   const { data, error } = await getClient()
     .from("training_data")
     .insert({
       session_id: row.session_id,
+      project_id: row.project_id,
       target: row.target,
       round_number: row.round_number,
       input_context: row.input_context,
@@ -505,10 +556,18 @@ export async function saveTrainingData(
       critique: row.critique ?? null,
       score_before: row.score_before,
       score_after: row.score_after,
-      improvement: row.improvement ?? null,
+      score_improvement: row.score_improvement,
+      improvement_summary: row.improvement_summary ?? null,
       final_output: row.final_output ?? null,
       was_successful: row.was_successful ?? false,
+      reached_threshold: row.reached_threshold ?? false,
+      rounds_to_complete: row.rounds_to_complete ?? 0,
       model_used: row.model_used,
+      temperature: row.temperature,
+      tokens_used: row.tokens_used,
+      project_type: row.project_type ?? null,
+      file_type: row.file_type ?? null,
+      task_type: row.task_type ?? null,
     })
     .select("id")
     .single();
@@ -518,44 +577,151 @@ export async function saveTrainingData(
 
 export async function finalizeTrainingData(
   ids: string[],
-  finalOutput: string,
-  wasSuccessful: boolean
+  payload: TrainingDataFinalize
 ): Promise<void> {
   if (ids.length === 0) return;
   const { error } = await getClient()
     .from("training_data")
-    .update({ final_output: finalOutput, was_successful: wasSuccessful })
+    .update({
+      final_output: payload.finalOutput,
+      was_successful: payload.wasSuccessful,
+      reached_threshold: payload.reachedThreshold,
+      rounds_to_complete: payload.roundsToComplete,
+      improvement_summary: payload.improvementSummary,
+    })
     .in("id", ids);
   if (error) throw new DbError(error.message);
 }
 
-export async function getTrainingDataCount(): Promise<number> {
-  const { count, error } = await getClient()
-    .from("training_data")
-    .select("*", { count: "exact", head: true });
-  if (
-    error?.message?.includes("does not exist") ||
-    error?.message?.includes("Could not find the table") ||
-    error?.code === "PGRST205"
-  ) {
-    return 0;
-  }
-  if (error) throw new DbError(error.message);
-  return count ?? 0;
+function applyTrainingFilters<T extends { eq: Function; gte: Function; lte: Function }>(
+  query: T,
+  filters: TrainingDataFilters
+): T {
+  let q = query;
+  if (filters.successful) q = q.eq("was_successful", true) as T;
+  if (filters.minScore !== undefined) q = q.gte("score_after", filters.minScore) as T;
+  if (filters.fileType) q = q.eq("file_type", filters.fileType) as T;
+  if (filters.from) q = q.gte("created_at", filters.from) as T;
+  if (filters.to) q = q.lte("created_at", filters.to) as T;
+  return q;
 }
 
-export async function getAllTrainingData(): Promise<TrainingDataRow[]> {
+export async function getTrainingDataForExport(
+  filters: TrainingDataFilters = {}
+): Promise<TrainingDataRow[]> {
+  let query = getClient().from("training_data").select("*").order("created_at", { ascending: true });
+  query = applyTrainingFilters(query, filters);
+  const { data, error } = await query;
+  if (isTrainingTableMissing(error)) return [];
+  if (error) throw new DbError(error.message);
+  return (data ?? []) as TrainingDataRow[];
+}
+
+export async function getTrainingDataSessions(
+  filters: TrainingDataFilters = {}
+): Promise<TrainingDataSessionRow[]> {
+  const rows = await getTrainingDataForExport(filters);
+  const bySession = new Map<string, TrainingDataRow[]>();
+
+  for (const row of rows) {
+    const key = row.session_id ?? row.project_id ?? row.id;
+    const list = bySession.get(key) ?? [];
+    list.push(row);
+    bySession.set(key, list);
+  }
+
+  const sessions: TrainingDataSessionRow[] = [];
+  for (const [sessionId, group] of Array.from(bySession.entries())) {
+    const sorted = [...group].sort((a, b) => a.round_number - b.round_number);
+    const last = sorted[sorted.length - 1];
+    sessions.push({
+      session_id: sessionId,
+      target: last.target,
+      file_type: last.file_type,
+      rounds_taken: last.rounds_to_complete || Math.max(...sorted.map((r) => r.round_number)),
+      final_score: last.score_after,
+      was_successful: sorted.some((r) => r.was_successful),
+      model_used: last.model_used,
+      created_at: last.created_at,
+    });
+  }
+
+  return sessions.sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+export async function getTrainingDataStats(): Promise<TrainingDataStats> {
   const { data, error } = await getClient()
     .from("training_data")
     .select("*")
     .order("created_at", { ascending: true });
-  if (
-    error?.message?.includes("does not exist") ||
-    error?.message?.includes("Could not find the table") ||
-    error?.code === "PGRST205"
-  ) {
-    return [];
-  }
+
+  if (isTrainingTableMissing(error)) return EMPTY_TRAINING_STATS;
   if (error) throw new DbError(error.message);
-  return (data ?? []) as TrainingDataRow[];
+
+  const rows = (data ?? []) as TrainingDataRow[];
+  if (rows.length === 0) return EMPTY_TRAINING_STATS;
+
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+
+  const sessionMap = new Map<string, TrainingDataRow[]>();
+  const fileTypeMap = new Map<string, number>();
+
+  for (const row of rows) {
+    const key = row.session_id ?? row.project_id ?? row.id;
+    const list = sessionMap.get(key) ?? [];
+    list.push(row);
+    sessionMap.set(key, list);
+
+    if (row.file_type) {
+      fileTypeMap.set(row.file_type, (fileTypeMap.get(row.file_type) ?? 0) + 1);
+    }
+  }
+
+  let successfulLoops = 0;
+  let totalRounds = 0;
+  let sessionCount = 0;
+
+  for (const group of Array.from(sessionMap.values())) {
+    sessionCount += 1;
+    const last = group[group.length - 1];
+    if (last.was_successful || last.reached_threshold) successfulLoops += 1;
+    totalRounds += last.rounds_to_complete || Math.max(...group.map((r) => r.round_number));
+  }
+
+  const qualityExamples = rows.filter((r) => r.score_after >= 95).length;
+  const thisWeekCount = rows.filter(
+    (r) => new Date(r.created_at) >= weekAgo
+  ).length;
+
+  const fileTypeBreakdown = Array.from(fileTypeMap.entries())
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+
+  const totalExamples = rows.length;
+
+  return {
+    totalExamples,
+    successfulLoops,
+    avgRoundsToComplete:
+      sessionCount > 0 ? Math.round((totalRounds / sessionCount) * 10) / 10 : 0,
+    fileTypeBreakdown,
+    thisWeekCount,
+    qualityExamples,
+    uniqueFileTypes: fileTypeMap.size,
+    readinessPercent: Math.min(100, Math.round((totalExamples / 1000) * 100)),
+    milestones: buildMilestones(totalExamples),
+  };
+}
+
+export async function getTrainingDataCount(): Promise<number> {
+  const stats = await getTrainingDataStats();
+  return stats.totalExamples;
+}
+
+export async function getAllTrainingData(): Promise<TrainingDataRow[]> {
+  return getTrainingDataForExport();
 }

@@ -54,27 +54,94 @@ export type DatasetFile = {
 
 export type TrainingDataRow = {
   id: string;
-  session_id: string;
+  session_id: string | null;
+  project_id: string | null;
   target: string;
   round_number: number;
-  input_context: string;
+  input_context: string | null;
   output: string;
   critique: string | null;
   score_before: number;
   score_after: number;
-  improvement: string | null;
+  score_improvement: number;
+  improvement_summary: string | null;
   final_output: string | null;
   was_successful: boolean;
+  reached_threshold: boolean;
+  rounds_to_complete: number;
   model_used: string;
+  temperature: number;
+  tokens_used: number;
+  project_type: string | null;
+  file_type: string | null;
+  task_type: string | null;
   created_at: string;
 };
 
 export type TrainingDataInsert = Omit<
   TrainingDataRow,
-  "id" | "final_output" | "was_successful" | "created_at"
+  | "id"
+  | "final_output"
+  | "was_successful"
+  | "reached_threshold"
+  | "rounds_to_complete"
+  | "improvement_summary"
+  | "created_at"
 > & {
   final_output?: string | null;
   was_successful?: boolean;
+  reached_threshold?: boolean;
+  rounds_to_complete?: number;
+  improvement_summary?: string | null;
+};
+
+export type TrainingDataFinalize = {
+  finalOutput: string;
+  wasSuccessful: boolean;
+  reachedThreshold: boolean;
+  roundsToComplete: number;
+  improvementSummary: string;
+};
+
+export type TrainingDataFilters = {
+  successful?: boolean;
+  minScore?: number;
+  fileType?: string;
+  from?: string;
+  to?: string;
+};
+
+export type TrainingDataSessionRow = {
+  session_id: string;
+  target: string;
+  file_type: string | null;
+  rounds_taken: number;
+  final_score: number;
+  was_successful: boolean;
+  model_used: string;
+  created_at: string;
+};
+
+export type TrainingDataStats = {
+  totalExamples: number;
+  successfulLoops: number;
+  avgRoundsToComplete: number;
+  fileTypeBreakdown: Array<{ type: string; count: number }>;
+  thisWeekCount: number;
+  qualityExamples: number;
+  uniqueFileTypes: number;
+  readinessPercent: number;
+  milestones: {
+    bronze: boolean;
+    silver: boolean;
+    gold: boolean;
+    diamond: boolean;
+  };
+};
+
+export type TrainingDataResponse = {
+  stats: TrainingDataStats;
+  sessions: TrainingDataSessionRow[];
 };
 
 export type EvaluationStats = {
