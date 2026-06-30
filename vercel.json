@@ -16,7 +16,7 @@
       "maxDuration": 300
     },
     "app/api/plan/route.ts": {
-      "maxDuration": 300
+      "maxDuration": 120
     },
     "app/api/build/file/route.ts": {
       "maxDuration": 300

@@ -51,6 +51,10 @@ function normalizePlan(data: ProjectPlan, niche: string, suggestedStack: ReturnT
   const fileCount = data.files?.length ?? data.estimatedFiles ?? 0;
   const normalized: ProjectPlan = {
     ...data,
+    name: data.name?.trim() || "My App",
+    description:
+      data.description?.trim() ||
+      "A custom app built with RefineAI based on your idea.",
     niche: data.niche || niche,
     techStack: { ...suggestedStack, ...data.techStack },
     estimatedFiles: fileCount,
@@ -59,10 +63,18 @@ function normalizePlan(data: ProjectPlan, niche: string, suggestedStack: ReturnT
       data.apiRoutes ??
       data.files?.filter((f) => f.isApiRoute).map((f) => `/${f.path.replace(/\\/g, "/")}`) ??
       [],
+    files: data.files?.length
+      ? data.files
+      : [
+          { path: "package.json", name: "package.json", purpose: "Project setup", isApiRoute: false },
+          { path: "app/page.tsx", name: "page.tsx", purpose: "Main app screen", isApiRoute: false },
+          { path: "app/layout.tsx", name: "layout.tsx", purpose: "App layout", isApiRoute: false },
+        ],
   };
   if (!normalized.steps?.length) {
     normalized.steps = derivePlanSteps(normalized);
   }
+  normalized.estimatedFiles = normalized.files.length;
   return normalized;
 }
 

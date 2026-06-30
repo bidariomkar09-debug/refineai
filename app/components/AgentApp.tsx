@@ -456,10 +456,25 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
         { id: newId(), role: "user", content: idea, type: "chat" },
       ]);
 
+      let gotPlan = false;
+
       await fetchStream("/api/plan", { idea }, (event) => {
         if (event.type === "status") {
           setStatusMessage(event.message);
+        } else if (event.type === "error") {
+          gotPlan = false;
+          setPhase("idle");
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: newId(),
+              role: "assistant",
+              content: event.message,
+              type: "chat",
+            },
+          ]);
         } else if (event.type === "plan") {
+          gotPlan = true;
           const intro = getPlanIntro(event.data);
           setProjectId(event.projectId);
           setPlan(event.data);
@@ -480,6 +495,10 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           loadProjects();
         }
       });
+
+      if (!gotPlan) {
+        setPhase((current) => (current === "planning" ? "idle" : current));
+      }
 
       setIsLoading(false);
       setStatusMessage("");
