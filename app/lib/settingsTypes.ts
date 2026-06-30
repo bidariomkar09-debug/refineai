@@ -220,6 +220,21 @@ export type ModelComparisonResult = {
   roundsWinner: "base" | "fine_tuned" | "tie";
 };
 
+export type ModelComparisonRow = {
+  id: string;
+  test_prompt: string;
+  model_a: string;
+  model_b: string;
+  model_a_score: number;
+  model_b_score: number;
+  model_a_rounds: number;
+  model_b_rounds: number;
+  model_a_tokens: number;
+  model_b_tokens: number;
+  winner: "model_a" | "model_b" | "tie";
+  created_at: string;
+};
+
 export type EvaluationStats = {
   projectScores: Array<{ name: string; score: number }>;
   roundScores: Array<{ round: number; score: number }>;

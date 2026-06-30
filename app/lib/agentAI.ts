@@ -154,6 +154,7 @@ export async function callFileTask(params: {
   currentCode?: string;
   lastReview?: string;
   round: number;
+  modelOverride?: string;
 }): Promise<
   FileTaskResult & {
     tokens: number;
@@ -163,7 +164,7 @@ export async function callFileTask(params: {
   }
 > {
   const inputContext = buildFileTaskUserPrompt(params);
-  const modelUsed = await getActiveModel();
+  const modelUsed = params.modelOverride ?? (await getActiveModel());
   const temperature = await getTemperature();
 
   const { data, tokens } = await generateJSON<{

@@ -17,6 +17,7 @@ import type {
   EvaluationStats,
   FineTunedModel,
   FineTunedModelStatus,
+  ModelComparisonRow,
   ProjectWithStats,
   TrainingDataCleanRow,
   TrainingDataFilters,
@@ -911,4 +912,59 @@ export async function syncFineTunedJobStatus(
   };
   if (modelId) partial.model_id = modelId;
   return updateFineTunedModel(id, partial);
+}
+
+// --- Model comparisons ---
+
+function isComparisonsTableMissing(error: { message?: string; code?: string } | null): boolean {
+  return (
+    !!error?.message?.includes("does not exist") ||
+    !!error?.message?.includes("Could not find the table") ||
+    error?.code === "PGRST205"
+  );
+}
+
+export async function saveModelComparison(row: {
+  test_prompt: string;
+  model_a: string;
+  model_b: string;
+  model_a_score: number;
+  model_b_score: number;
+  model_a_rounds: number;
+  model_b_rounds: number;
+  model_a_tokens: number;
+  model_b_tokens: number;
+  winner: "model_a" | "model_b" | "tie";
+}): Promise<void> {
+  const { error } = await getClient().from("model_comparisons").insert(row);
+  if (isComparisonsTableMissing(error)) return;
+  if (error) throw new DbError(error.message);
+}
+
+export async function getModelComparisons(limit = 50): Promise<ModelComparisonRow[]> {
+  const { data, error } = await getClient()
+    .from("model_comparisons")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (isComparisonsTableMissing(error)) return [];
+  if (error) throw new DbError(error.message);
+  return (data ?? []) as ModelComparisonRow[];
+}
+
+export async function getSucceededFineTunedModel(): Promise<FineTunedModel | null> {
+  const activated = await getActivatedFineTunedModel();
+  if (activated?.model_id) return activated;
+
+  const { data, error } = await getClient()
+    .from("fine_tuned_models")
+    .select("*")
+    .eq("status", "succeeded")
+    .not("model_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (isFineTunedTableMissing(error)) return null;
+  if (error) throw new DbError(error.message);
+  return (data as FineTunedModel) ?? null;
 }
