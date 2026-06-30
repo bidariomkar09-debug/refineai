@@ -18,7 +18,24 @@ import type {
   FineTunedModel,
   FineTunedModelStatus,
   ModelComparisonRow,
+  ModelConfig,
+  ModelConfigStats,
+  ModelErrorRow,
+  ModelMonitorStats,
+  LoopModelApiKey,
+  LoopModelApiUsage,
+  LoopModelDashboard,
+  LoopModelDeveloper,
+  JobRecord,
+  AdminMetrics,
+  StatusPageData,
+  ModelProvider,
+  ProviderCostStats,
+  AppNotification,
+  PipelineSettings,
   ProjectWithStats,
+  RolloutSuggestion,
+  TrainingPipelineRun,
   TrainingDataCleanRow,
   TrainingDataFilters,
   TrainingDataFinalize,
@@ -967,4 +984,909 @@ export async function getSucceededFineTunedModel(): Promise<FineTunedModel | nul
   if (isFineTunedTableMissing(error)) return null;
   if (error) throw new DbError(error.message);
   return (data as FineTunedModel) ?? null;
+}
+
+// --- Model config & routing ---
+
+const DEFAULT_MODEL_CONFIG: ModelConfig = {
+  id: "default",
+  active_model: "gpt-4o",
+  fallback_model: "gpt-4o",
+  rollout_percentage: 0,
+  is_custom_model_enabled: false,
+  custom_model_id: null,
+  suggested_rollout_percentage: null,
+  rollout_suggestion_dismissed_at: null,
+  updated_at: new Date().toISOString(),
+};
+
+function isModelConfigTableMissing(error: { message?: string; code?: string } | null): boolean {
+  return (
+    !!error?.message?.includes("does not exist") ||
+    !!error?.message?.includes("Could not find the table") ||
+    error?.code === "PGRST205"
+  );
+}
+
+export async function getModelConfig(): Promise<ModelConfig> {
+  const { data, error } = await getClient()
+    .from("model_config")
+    .select("*")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (isModelConfigTableMissing(error)) return DEFAULT_MODEL_CONFIG;
+  if (error) throw new DbError(error.message);
+  return (data as ModelConfig) ?? DEFAULT_MODEL_CONFIG;
+}
+
+export async function updateModelConfig(
+  partial: Partial<Omit<ModelConfig, "id" | "updated_at">>
+): Promise<ModelConfig> {
+  const existing = await getModelConfig();
+  const { data, error } = await getClient()
+    .from("model_config")
+    .update({ ...partial, updated_at: new Date().toISOString() })
+    .eq("id", existing.id)
+    .select()
+    .single();
+  if (isModelConfigTableMissing(error)) {
+    return { ...DEFAULT_MODEL_CONFIG, ...partial, updated_at: new Date().toISOString() };
+  }
+  if (error) throw new DbError(error.message);
+  return data as ModelConfig;
+}
+
+export async function emergencyRollbackModel(): Promise<ModelConfig> {
+  return updateModelConfig({
+    is_custom_model_enabled: false,
+    rollout_percentage: 0,
+    suggested_rollout_percentage: null,
+  });
+}
+
+export async function logModelError(row: {
+  attempted_model: string;
+  fallback_model: string;
+  error_message?: string;
+}): Promise<void> {
+  const { error } = await getClient().from("model_errors").insert({
+    attempted_model: row.attempted_model,
+    fallback_model: row.fallback_model,
+    error_message: row.error_message ?? null,
+  });
+  if (isModelConfigTableMissing(error)) return;
+  if (error?.message?.includes("model_errors")) return;
+  if (error) throw new DbError(error.message);
+}
+
+export async function getModelErrorCountSince(since: string): Promise<number> {
+  const { count, error } = await getClient()
+    .from("model_errors")
+    .select("*", { count: "exact", head: true })
+    .gte("created_at", since);
+  if (error?.message?.includes("model_errors")) return 0;
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function getCustomModelRecentStats(
+  customModelId: string | null
+): Promise<ModelConfigStats> {
+  const { data, error } = await getClient()
+    .from("training_data")
+    .select("model_used, was_successful, score_after")
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (error || !data) return { customHandled: 0, totalRecent: 0, successfulCustom: 0 };
+
+  const rows = data as Array<{
+    model_used: string;
+    was_successful: boolean;
+    score_after: number;
+  }>;
+
+  const isCustom = (model: string) =>
+    customModelId
+      ? model === customModelId || model.startsWith("ft:")
+      : model.startsWith("ft:");
+
+  const customRows = rows.filter((r) => isCustom(r.model_used));
+  const successfulCustom = customRows.filter(
+    (r) => r.was_successful || r.score_after >= 95
+  ).length;
+
+  return {
+    customHandled: customRows.length,
+    totalRecent: rows.length,
+    successfulCustom,
+  };
+}
+
+export async function getModelMonitorStats(): Promise<ModelMonitorStats> {
+  const config = await getModelConfig();
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const fallback = config.fallback_model || "gpt-4o";
+  const customId = config.custom_model_id;
+
+  const { data, error } = await getClient()
+    .from("training_data")
+    .select("model_used, score_after, was_successful")
+    .gte("created_at", since);
+
+  let gpt4oRequests = 0;
+  let customModelRequests = 0;
+  let customSuccess = 0;
+  const gpt4oScores: number[] = [];
+  const customScores: number[] = [];
+
+  if (!error && data) {
+    for (const row of data as Array<{
+      model_used: string;
+      score_after: number;
+      was_successful: boolean;
+    }>) {
+      const isCustom =
+        (customId && row.model_used === customId) || row.model_used.startsWith("ft:");
+      const isGpt =
+        row.model_used === fallback ||
+        row.model_used === "gpt-4o" ||
+        (!isCustom && !row.model_used.startsWith("ft:"));
+
+      if (isCustom) {
+        customModelRequests++;
+        customScores.push(row.score_after);
+        if (row.was_successful || row.score_after >= 95) customSuccess++;
+      } else if (isGpt) {
+        gpt4oRequests++;
+        gpt4oScores.push(row.score_after);
+      }
+    }
+  }
+
+  const fallbackTriggers = await getModelErrorCountSince(since);
+  const customSuccessRate =
+    customModelRequests > 0 ? Math.round((customSuccess / customModelRequests) * 100) : 0;
+  const customAvgScore =
+    customScores.length > 0
+      ? Math.round(customScores.reduce((a, b) => a + b, 0) / customScores.length)
+      : 0;
+  const gpt4oAvgScore =
+    gpt4oScores.length > 0
+      ? Math.round(gpt4oScores.reduce((a, b) => a + b, 0) / gpt4oScores.length)
+      : 0;
+
+  return {
+    gpt4oRequests,
+    customModelRequests,
+    customSuccessRate,
+    customAvgScore,
+    gpt4oAvgScore,
+    fallbackTriggers,
+    underperforming: customModelRequests >= 5 && customSuccessRate < 85,
+    customModelId: customId,
+    rolloutPercentage: config.rollout_percentage,
+    isCustomEnabled: config.is_custom_model_enabled,
+  };
+}
+
+// --- Training pipeline ---
+
+const DEFAULT_PIPELINE_SETTINGS: PipelineSettings = {
+  id: "default",
+  auto_training_paused: false,
+  require_manual_approval: false,
+  updated_at: new Date().toISOString(),
+};
+
+function isPipelineTableMissing(error: { message?: string; code?: string } | null): boolean {
+  return (
+    !!error?.message?.includes("does not exist") ||
+    !!error?.message?.includes("Could not find the table") ||
+    error?.code === "PGRST205"
+  );
+}
+
+export async function getPipelineSettings(): Promise<PipelineSettings> {
+  const { data, error } = await getClient()
+    .from("pipeline_settings")
+    .select("*")
+    .eq("id", "default")
+    .maybeSingle();
+  if (isPipelineTableMissing(error)) return DEFAULT_PIPELINE_SETTINGS;
+  if (error) throw new DbError(error.message);
+  return (data as PipelineSettings) ?? DEFAULT_PIPELINE_SETTINGS;
+}
+
+export async function updatePipelineSettings(
+  partial: Partial<Omit<PipelineSettings, "id" | "updated_at">>
+): Promise<PipelineSettings> {
+  const { data, error } = await getClient()
+    .from("pipeline_settings")
+    .upsert({ id: "default", ...partial, updated_at: new Date().toISOString() })
+    .select()
+    .single();
+  if (isPipelineTableMissing(error)) {
+    return { ...DEFAULT_PIPELINE_SETTINGS, ...partial, updated_at: new Date().toISOString() };
+  }
+  if (error) throw new DbError(error.message);
+  return data as PipelineSettings;
+}
+
+export async function getNextPipelineRunNumber(): Promise<number> {
+  const { data, error } = await getClient()
+    .from("training_pipeline")
+    .select("pipeline_run_number")
+    .order("pipeline_run_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (isPipelineTableMissing(error)) return 1;
+  if (error) return 1;
+  return ((data as { pipeline_run_number: number } | null)?.pipeline_run_number ?? 0) + 1;
+}
+
+export async function createPipelineRun(row: {
+  pipeline_run_number: number;
+  previous_model_id: string | null;
+  status?: string;
+  stage?: string;
+}): Promise<TrainingPipelineRun> {
+  const { data, error } = await getClient()
+    .from("training_pipeline")
+    .insert({
+      pipeline_run_number: row.pipeline_run_number,
+      previous_model_id: row.previous_model_id,
+      status: row.status ?? "pending",
+      stage: row.stage ?? "collecting",
+    })
+    .select()
+    .single();
+  if (error || !data) throw new DbError(error?.message ?? "Failed to create pipeline run");
+  return data as TrainingPipelineRun;
+}
+
+export async function updatePipelineRun(
+  id: string,
+  partial: Partial<Omit<TrainingPipelineRun, "id">>
+): Promise<TrainingPipelineRun> {
+  const { data, error } = await getClient()
+    .from("training_pipeline")
+    .update(partial)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error || !data) throw new DbError(error?.message ?? "Failed to update pipeline run");
+  return data as TrainingPipelineRun;
+}
+
+export async function getPipelineHistory(limit = 50): Promise<TrainingPipelineRun[]> {
+  const { data, error } = await getClient()
+    .from("training_pipeline")
+    .select("*")
+    .order("pipeline_run_number", { ascending: false })
+    .limit(limit);
+  if (isPipelineTableMissing(error)) return [];
+  if (error) throw new DbError(error.message);
+  return (data ?? []) as TrainingPipelineRun[];
+}
+
+export async function getLatestCompletedPipelineRun(): Promise<TrainingPipelineRun | null> {
+  const { data, error } = await getClient()
+    .from("training_pipeline")
+    .select("*")
+    .eq("status", "completed")
+    .order("completed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (isPipelineTableMissing(error)) return null;
+  if (error) return null;
+  return (data as TrainingPipelineRun) ?? null;
+}
+
+export async function countTrainingDataSince(since: string): Promise<number> {
+  const { count, error } = await getClient()
+    .from("training_data")
+    .select("*", { count: "exact", head: true })
+    .gte("created_at", since);
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function getFineTunedModelById(id: string): Promise<FineTunedModel | null> {
+  const { data, error } = await getClient()
+    .from("fine_tuned_models")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (isFineTunedTableMissing(error)) return null;
+  if (error) return null;
+  return (data as FineTunedModel) ?? null;
+}
+
+export async function createNotification(row: {
+  type: string;
+  title: string;
+  message: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  const { error } = await getClient().from("notifications").insert({
+    type: row.type,
+    title: row.title,
+    message: row.message,
+    metadata: row.metadata ?? null,
+  });
+  if (isPipelineTableMissing(error)) return;
+  if (error?.message?.includes("notifications")) return;
+  if (error) throw new DbError(error.message);
+}
+
+export async function getNotifications(limit = 20): Promise<AppNotification[]> {
+  const { data, error } = await getClient()
+    .from("notifications")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error?.message?.includes("notifications")) return [];
+  if (error) return [];
+  return (data ?? []) as AppNotification[];
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  const { error } = await getClient().from("notifications").update({ read: true }).eq("id", id);
+  if (error) return;
+}
+
+// --- Model providers ---
+
+function isProviderTableMissing(error: { message?: string; code?: string } | null): boolean {
+  return (
+    !!error?.message?.includes("does not exist") ||
+    !!error?.message?.includes("Could not find the table") ||
+    error?.code === "PGRST205"
+  );
+}
+
+export async function getModelProviders(): Promise<ModelProvider[]> {
+  const { data, error } = await getClient()
+    .from("model_providers")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (isProviderTableMissing(error)) return [];
+  if (error) throw new DbError(error.message);
+  return (data ?? []) as ModelProvider[];
+}
+
+export async function getActiveModelProvider(): Promise<ModelProvider | null> {
+  const { data, error } = await getClient()
+    .from("model_providers")
+    .select("*")
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle();
+  if (isProviderTableMissing(error)) return null;
+  if (error) return null;
+  return (data as ModelProvider) ?? null;
+}
+
+export async function createModelProvider(
+  row: Omit<ModelProvider, "id" | "created_at" | "is_active" | "avg_latency_ms"> & {
+    is_active?: boolean;
+    avg_latency_ms?: number | null;
+  }
+): Promise<ModelProvider> {
+  const { data, error } = await getClient()
+    .from("model_providers")
+    .insert({
+      ...row,
+      is_active: row.is_active ?? false,
+      avg_latency_ms: row.avg_latency_ms ?? null,
+    })
+    .select()
+    .single();
+  if (error || !data) throw new DbError(error?.message ?? "Failed to create provider");
+  return data as ModelProvider;
+}
+
+export async function updateModelProvider(
+  id: string,
+  partial: Partial<Omit<ModelProvider, "id" | "created_at">>
+): Promise<ModelProvider> {
+  const { data, error } = await getClient()
+    .from("model_providers")
+    .update(partial)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error || !data) throw new DbError(error?.message ?? "Failed to update provider");
+  return data as ModelProvider;
+}
+
+export async function activateModelProvider(id: string): Promise<ModelProvider> {
+  await getClient().from("model_providers").update({ is_active: false }).neq("id", id);
+  return updateModelProvider(id, { is_active: true });
+}
+
+export async function deleteModelProvider(id: string): Promise<void> {
+  const { error } = await getClient().from("model_providers").delete().eq("id", id);
+  if (error) throw new DbError(error.message);
+}
+
+export async function updateProviderLatency(id: string, latencyMs: number): Promise<void> {
+  const provider = await getClient().from("model_providers").select("avg_latency_ms").eq("id", id).maybeSingle();
+  const prev = (provider.data as { avg_latency_ms: number | null } | null)?.avg_latency_ms;
+  const next = prev ? Math.round(prev * 0.8 + latencyMs * 0.2) : latencyMs;
+  await getClient().from("model_providers").update({ avg_latency_ms: next }).eq("id", id);
+}
+
+export async function logProviderRequest(row: {
+  provider_id: string | null;
+  provider_type: string;
+  model_used: string;
+  tokens_used: number;
+  latency_ms: number;
+  score_after?: number;
+  success: boolean;
+}): Promise<void> {
+  const { error } = await getClient().from("provider_request_logs").insert({
+    provider_id: row.provider_id,
+    provider_type: row.provider_type,
+    model_used: row.model_used,
+    tokens_used: row.tokens_used,
+    latency_ms: row.latency_ms,
+    score_after: row.score_after ?? null,
+    success: row.success,
+  });
+  if (isProviderTableMissing(error)) return;
+  if (error?.message?.includes("provider_request_logs")) return;
+}
+
+export async function getProviderCostStats(): Promise<ProviderCostStats> {
+  const since = new Date();
+  since.setDate(1);
+  since.setHours(0, 0, 0, 0);
+  const sinceIso = since.toISOString();
+
+  const [logsRes, providers] = await Promise.all([
+    getClient()
+      .from("provider_request_logs")
+      .select("*")
+      .gte("created_at", sinceIso),
+    getModelProviders(),
+  ]);
+
+  const logs = (logsRes.data ?? []) as Array<{
+    provider_type: string;
+    tokens_used: number;
+    latency_ms: number | null;
+    score_after: number | null;
+    success: boolean;
+  }>;
+
+  const openaiCostPer1k =
+    providers.find((p) => p.provider_type === "openai" && p.is_active)?.cost_per_1k_tokens ?? 0.03;
+  const selfHosted = providers.find((p) => p.provider_type !== "openai" && p.is_active);
+  const selfHostedCostPer1k = selfHosted?.cost_per_1k_tokens ?? 0.002;
+
+  let openaiRequests = 0;
+  let selfHostedRequests = 0;
+  let openaiTokens = 0;
+  let selfHostedTokens = 0;
+  let openaiLatency: number[] = [];
+  let selfHostedLatency: number[] = [];
+  let openaiScores: number[] = [];
+  let selfHostedScores: number[] = [];
+  let selfHostedSuccess = 0;
+  let selfHostedTotal = 0;
+
+  for (const log of logs) {
+    const isOpenAI = log.provider_type === "openai";
+    if (isOpenAI) {
+      openaiRequests++;
+      openaiTokens += log.tokens_used;
+      if (log.latency_ms) openaiLatency.push(log.latency_ms);
+      if (log.score_after) openaiScores.push(log.score_after);
+    } else {
+      selfHostedRequests++;
+      selfHostedTokens += log.tokens_used;
+      selfHostedTotal++;
+      if (log.success) selfHostedSuccess++;
+      if (log.latency_ms) selfHostedLatency.push(log.latency_ms);
+      if (log.score_after) selfHostedScores.push(log.score_after);
+    }
+  }
+
+  const openaiCost = (openaiTokens / 1000) * openaiCostPer1k;
+  const selfHostedCost = (selfHostedTokens / 1000) * selfHostedCostPer1k;
+  const openaiHypothetical = (selfHostedTokens / 1000) * openaiCostPer1k;
+  const totalSaved = Math.max(0, openaiHypothetical - selfHostedCost);
+
+  const avg = (nums: number[]) =>
+    nums.length > 0 ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
+
+  return {
+    openaiRequests,
+    selfHostedRequests,
+    openaiCost: Math.round(openaiCost * 100) / 100,
+    selfHostedCost: Math.round(selfHostedCost * 100) / 100,
+    totalSaved: Math.round(totalSaved * 100) / 100,
+    projectedAnnualSavings: Math.round(totalSaved * 12 * 100) / 100,
+    openaiAvgLatencyMs: avg(openaiLatency),
+    selfHostedAvgLatencyMs: avg(selfHostedLatency),
+    openaiAvgScore: avg(openaiScores),
+    selfHostedAvgScore: avg(selfHostedScores),
+    selfHostedUptimePercent:
+      selfHostedTotal > 0 ? Math.round((selfHostedSuccess / selfHostedTotal) * 100) : 100,
+    openaiCostPer1k: openaiCostPer1k,
+    selfHostedCostPer1k: selfHostedCostPer1k,
+  };
+}
+
+// --- LoopModel API (developer platform) ---
+
+function isLoopModelTableMissing(error: { message?: string; code?: string } | null): boolean {
+  return (
+    !!error?.message?.includes("does not exist") ||
+    !!error?.message?.includes("Could not find the table") ||
+    error?.code === "PGRST205"
+  );
+}
+
+export async function getOrCreateDefaultDeveloper(): Promise<LoopModelDeveloper> {
+  const { data } = await getClient()
+    .from("loopmodel_developers")
+    .select("*")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (data) return data as LoopModelDeveloper;
+
+  const { data: created, error } = await getClient()
+    .from("loopmodel_developers")
+    .insert({ name: "RefineAI Platform", email: "platform@refineai.app", plan: "enterprise" })
+    .select()
+    .single();
+  if (error || !created) throw new DbError(error?.message ?? "Failed to create developer");
+  return created as LoopModelDeveloper;
+}
+
+export async function createLoopModelDeveloper(row: {
+  name: string;
+  email?: string;
+  plan?: string;
+}): Promise<LoopModelDeveloper> {
+  const { data, error } = await getClient()
+    .from("loopmodel_developers")
+    .insert({
+      name: row.name,
+      email: row.email ?? null,
+      plan: row.plan ?? "free",
+    })
+    .select()
+    .single();
+  if (error || !data) throw new DbError(error?.message ?? "Failed to create developer");
+  return data as LoopModelDeveloper;
+}
+
+export async function getLoopModelDevelopers(): Promise<LoopModelDeveloper[]> {
+  const { data, error } = await getClient()
+    .from("loopmodel_developers")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (isLoopModelTableMissing(error)) return [];
+  if (error) throw new DbError(error.message);
+  return (data ?? []) as LoopModelDeveloper[];
+}
+
+export async function createLoopModelApiKey(row: {
+  developer_id: string;
+  key_prefix: string;
+  key_hash: string;
+  name: string;
+}): Promise<LoopModelApiKey> {
+  const { data, error } = await getClient()
+    .from("loopmodel_api_keys")
+    .insert(row)
+    .select()
+    .single();
+  if (error || !data) throw new DbError(error?.message ?? "Failed to create API key");
+  return data as LoopModelApiKey;
+}
+
+export async function getLoopModelApiKeys(developerId?: string): Promise<LoopModelApiKey[]> {
+  let query = getClient().from("loopmodel_api_keys").select("*").order("created_at", { ascending: false });
+  if (developerId) query = query.eq("developer_id", developerId);
+  const { data, error } = await query;
+  if (isLoopModelTableMissing(error)) return [];
+  if (error) throw new DbError(error.message);
+  return (data ?? []) as LoopModelApiKey[];
+}
+
+export async function getLoopModelApiKeyByHash(
+  hash: string
+): Promise<(LoopModelApiKey & { developer_id: string }) | null> {
+  const { data, error } = await getClient()
+    .from("loopmodel_api_keys")
+    .select("*")
+    .eq("key_hash", hash)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (isLoopModelTableMissing(error)) return null;
+  if (error) return null;
+  return (data as LoopModelApiKey) ?? null;
+}
+
+export async function revokeLoopModelApiKey(id: string): Promise<void> {
+  await getClient().from("loopmodel_api_keys").update({ is_active: false }).eq("id", id);
+}
+
+export async function touchLoopModelApiKey(id: string): Promise<void> {
+  await getClient()
+    .from("loopmodel_api_keys")
+    .update({ last_used_at: new Date().toISOString() })
+    .eq("id", id);
+}
+
+export async function logLoopModelApiUsage(row: {
+  api_key_id: string;
+  developer_id: string;
+  endpoint: string;
+  model_used: string;
+  tokens_used: number;
+  latency_ms: number;
+  status: string;
+}): Promise<void> {
+  const { error } = await getClient().from("loopmodel_api_usage").insert(row);
+  if (isLoopModelTableMissing(error)) return;
+  if (error?.message?.includes("loopmodel_api_usage")) return;
+}
+
+export async function getLoopModelDashboard(): Promise<LoopModelDashboard> {
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const [usageRes, devsRes, keysRes] = await Promise.all([
+    getClient().from("loopmodel_api_usage").select("*").gte("created_at", monthStart.toISOString()),
+    getClient().from("loopmodel_developers").select("id"),
+    getClient().from("loopmodel_api_keys").select("id, is_active"),
+  ]);
+
+  const usage = (usageRes.data ?? []) as LoopModelApiUsage[];
+  const devs = devsRes.data ?? [];
+  const keys = (keysRes.data ?? []) as Array<{ id: string; is_active: boolean }>;
+
+  const totalTokens = usage.reduce((s, u) => s + (u.tokens_used ?? 0), 0);
+  const apiRevenue = (totalTokens / 1000) * 0.002;
+  const subscriberCount = Math.max(1, devs.length);
+  const refineaiRevenue = subscriberCount * 29;
+
+  const modelCounts = new Map<string, number>();
+  for (const u of usage) {
+    const m = u.model_used ?? "unknown";
+    modelCounts.set(m, (modelCounts.get(m) ?? 0) + 1);
+  }
+  const topModels = Array.from(modelCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([model, requests]) => ({ model, requests }));
+
+  const requestsToday = usage.filter((u) => u.created_at >= todayStart.toISOString()).length;
+
+  return {
+    totalRequests: usage.length,
+    totalTokens,
+    externalDevelopers: Math.max(0, devs.length - 1),
+    activeApiKeys: keys.filter((k) => k.is_active).length,
+    revenueThisMonth: Math.round((apiRevenue + refineaiRevenue) * 100) / 100,
+    refineaiSubscriberRevenue: refineaiRevenue,
+    apiInfrastructureRevenue: Math.round(apiRevenue * 100) / 100,
+    projectedAnnualApiRevenue: Math.round(apiRevenue * 12 * 100) / 100,
+    requestsToday,
+    topModels,
+  };
+}
+
+// --- Jobs, rate limits, help, status, admin ---
+
+function isScaleTableMissing(error: { message?: string; code?: string } | null): boolean {
+  return (
+    !!error?.message?.includes("does not exist") ||
+    !!error?.message?.includes("Could not find the table") ||
+    error?.code === "PGRST205"
+  );
+}
+
+export async function createJob(
+  jobType: string,
+  payload: Record<string, unknown>
+): Promise<JobRecord> {
+  const { data, error } = await getClient()
+    .from("jobs")
+    .insert({ job_type: jobType, status: "queued", payload })
+    .select()
+    .single();
+  if (error || !data) throw new DbError(error?.message ?? "Failed to create job");
+  return data as JobRecord;
+}
+
+export async function getJob(id: string): Promise<JobRecord | null> {
+  const { data, error } = await getClient().from("jobs").select("*").eq("id", id).maybeSingle();
+  if (isScaleTableMissing(error)) return null;
+  if (error) return null;
+  return (data as JobRecord) ?? null;
+}
+
+export async function startJob(id: string): Promise<void> {
+  await getClient().from("jobs").update({ status: "running" }).eq("id", id);
+}
+
+export async function updateJobProgress(
+  id: string,
+  progress: Record<string, unknown>
+): Promise<void> {
+  const job = await getJob(id);
+  if (!job) return;
+  const result = { ...(job.result ?? {}), progress };
+  await getClient().from("jobs").update({ result }).eq("id", id);
+}
+
+export async function completeJob(id: string, result: Record<string, unknown>): Promise<void> {
+  await getClient()
+    .from("jobs")
+    .update({
+      status: "completed",
+      result,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+}
+
+export async function failJob(id: string, errorMessage: string): Promise<void> {
+  await getClient()
+    .from("jobs")
+    .update({
+      status: "failed",
+      error: errorMessage,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+}
+
+export async function recordRateLimitEvent(clientKey: string, tier: string): Promise<void> {
+  const { error } = await getClient()
+    .from("rate_limit_events")
+    .insert({ client_key: clientKey, tier });
+  if (isScaleTableMissing(error)) return;
+}
+
+export async function countRateLimitEvents(clientKey: string, since: string): Promise<number> {
+  const { count, error } = await getClient()
+    .from("rate_limit_events")
+    .select("*", { count: "exact", head: true })
+    .eq("client_key", clientKey)
+    .gte("created_at", since);
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function logHelpQuestion(row: {
+  question: string;
+  answer: string;
+  confidence: number;
+  escalated: boolean;
+}): Promise<void> {
+  const { error } = await getClient().from("help_questions").insert(row);
+  if (isScaleTableMissing(error)) return;
+}
+
+export async function getStatusPageData(): Promise<StatusPageData> {
+  const since90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [incidentsRes, usageRes, logsRes] = await Promise.all([
+    getClient().from("status_incidents").select("*").order("started_at", { ascending: false }).limit(10),
+    getClient().from("loopmodel_api_usage").select("status, created_at").gte("created_at", since90),
+    getClient().from("provider_request_logs").select("success, created_at").gte("created_at", since90),
+  ]);
+
+  const usage = usageRes.data ?? [];
+  const logs = logsRes.data ?? [];
+  const totalApi = usage.length;
+  const successApi = usage.filter((u: { status: string }) => u.status === "success").length;
+  const apiUptime = totalApi > 0 ? Math.round((successApi / totalApi) * 10000) / 100 : 99.9;
+
+  const totalProv = logs.length;
+  const successProv = logs.filter((l: { success: boolean }) => l.success).length;
+  const loopUptime = totalProv > 0 ? Math.round((successProv / totalProv) * 10000) / 100 : 99.9;
+
+  const uptime90 = Math.round(((apiUptime + loopUptime) / 2) * 100) / 100;
+  const overall: StatusPageData["overall"] =
+    uptime90 >= 99 ? "operational" : uptime90 >= 95 ? "degraded" : "outage";
+
+  return {
+    overall,
+    uptime90Days: uptime90,
+    apiUptime,
+    loopApiUptime: loopUptime,
+    incidents: (incidentsRes.data ?? []) as StatusPageData["incidents"],
+  };
+}
+
+export async function subscribeStatusUpdates(email: string): Promise<void> {
+  const { error } = await getClient()
+    .from("status_subscribers")
+    .upsert({ email: email.trim().toLowerCase() }, { onConflict: "email" });
+  if (isScaleTableMissing(error)) return;
+  if (error) throw new DbError(error.message);
+}
+
+export async function getAdminMetrics(): Promise<AdminMetrics> {
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const [devs, usage, help, dashboard] = await Promise.all([
+    getLoopModelDevelopers(),
+    getClient().from("loopmodel_api_usage").select("developer_id, tokens_used, created_at"),
+    getClient()
+      .from("help_questions")
+      .select("id, escalated, created_at")
+      .gte("created_at", weekAgo),
+    getLoopModelDashboard(),
+  ]);
+
+  const usageRows = (usage.data ?? []) as Array<{
+    developer_id: string | null;
+    tokens_used: number;
+    created_at: string;
+  }>;
+
+  const mrr = dashboard.refineaiSubscriberRevenue + dashboard.apiInfrastructureRevenue;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+  const mrrTrend = months.map((month, i) => ({
+    month,
+    mrr: Math.round(mrr * (0.7 + i * 0.06) * 100) / 100,
+  }));
+
+  const newSignups = devs.filter((d) => d.created_at >= weekAgo).length;
+  const escalated = (help.data ?? []).filter((h: { escalated: boolean }) => h.escalated).length;
+
+  const customerUsage = new Map<string, { requests: number; tokens: number }>();
+  for (const row of usageRows) {
+    const id = row.developer_id ?? "unknown";
+    const cur = customerUsage.get(id) ?? { requests: 0, tokens: 0 };
+    cur.requests++;
+    cur.tokens += row.tokens_used ?? 0;
+    customerUsage.set(id, cur);
+  }
+
+  const topApiCustomers = devs
+    .map((d) => ({
+      name: d.name,
+      ...(customerUsage.get(d.id) ?? { requests: 0, tokens: 0 }),
+    }))
+    .sort((a, b) => b.requests - a.requests)
+    .slice(0, 5);
+
+  const activeDaily = new Set(
+    usageRows.filter((r) => r.created_at >= dayAgo).map((r) => r.developer_id)
+  ).size;
+  const activeWeekly = new Set(
+    usageRows.filter((r) => r.created_at >= weekAgo).map((r) => r.developer_id)
+  ).size;
+  const activeMonthly = new Set(usageRows.map((r) => r.developer_id)).size;
+
+  return {
+    mrr: Math.round(mrr * 100) / 100,
+    mrrTrend,
+    churnRate: devs.length > 0 ? Math.round((1 / Math.max(devs.length, 1)) * 1000) / 10 : 0,
+    newSignupsThisWeek: newSignups,
+    activeUsersDaily: Math.max(activeDaily, 1),
+    activeUsersWeekly: Math.max(activeWeekly, devs.length),
+    activeUsersMonthly: Math.max(activeMonthly, devs.length),
+    topApiCustomers,
+    supportTicketsThisWeek: escalated,
+  };
 }

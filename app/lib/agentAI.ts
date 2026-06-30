@@ -1,28 +1,27 @@
-import OpenAI from "openai";
 import type { FileTask, ProjectPlan } from "./agentTypes";
-import { getActivatedFineTunedModel, getUserSettings } from "./db";
+import { getModelConfig, getUserSettings } from "./db";
+import {
+  FALLBACK_MODEL,
+  generateJSON,
+  generateJSONWithFallback,
+  getModel,
+  getOpenAIClient,
+  OpenAIClientError,
+  selectModelForRequest,
+  selectModelIdForRequest,
+} from "./openaiClient";
+import { modelUsedLabel } from "./modelProviders";
 
-export class OpenAIClientError extends Error {
-  constructor(
-    message: string,
-    public readonly statusCode: number = 500
-  ) {
-    super(message);
-    this.name = "OpenAIClientError";
-  }
-}
-
-export function getOpenAIClient(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new OpenAIClientError("OPENAI_API_KEY is not configured", 500);
-  }
-  return new OpenAI({ apiKey });
-}
-
-export function getModel(): string {
-  return process.env.OPENAI_MODEL ?? "gpt-4o";
-}
+export {
+  FALLBACK_MODEL,
+  generateJSON,
+  getModel,
+  getOpenAIClient,
+  modelUsedLabel,
+  OpenAIClientError,
+  selectModelForRequest,
+  selectModelIdForRequest,
+};
 
 export async function getTemperature(): Promise<number> {
   try {
@@ -34,56 +33,14 @@ export async function getTemperature(): Promise<number> {
 }
 
 export async function getActiveModel(): Promise<string> {
-  try {
-    const activated = await getActivatedFineTunedModel();
-    if (activated?.model_id) return activated.model_id;
-  } catch {
-    // fall through
-  }
-  try {
-    const settings = await getUserSettings();
-    if (settings.selected_model?.startsWith("ft:")) return settings.selected_model;
-  } catch {
-    // fall through
-  }
-  return getModel();
+  const resolved = await selectModelForRequest();
+  return modelUsedLabel(resolved);
 }
 
 function clampScore(score: unknown): number {
   const num = typeof score === "number" ? score : Number(score);
   if (Number.isNaN(num)) return 0;
   return Math.min(100, Math.max(0, Math.round(num)));
-}
-
-export async function generateJSON<T>(
-  system: string,
-  user: string,
-  model?: string,
-  temperature = 0.7
-): Promise<{ data: T; tokens: number }> {
-  const client = getOpenAIClient();
-  const response = await client.chat.completions.create({
-    model: model ?? getModel(),
-    temperature,
-    max_tokens: 4096,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-  });
-
-  const content = response.choices[0]?.message?.content;
-  if (!content) throw new OpenAIClientError("Empty response", 502);
-
-  try {
-    return {
-      data: JSON.parse(content) as T,
-      tokens: response.usage?.total_tokens ?? 0,
-    };
-  } catch {
-    throw new OpenAIClientError("Invalid JSON response", 502);
-  }
 }
 
 export type FileTaskResult = {
@@ -164,36 +121,68 @@ export async function callFileTask(params: {
   }
 > {
   const inputContext = buildFileTaskUserPrompt(params);
-  const modelUsed = params.modelOverride ?? (await getActiveModel());
+  const selected = await selectModelForRequest({
+    explicitOverride: params.modelOverride,
+  });
   const temperature = await getTemperature();
 
-  const { data, tokens } = await generateJSON<{
-    code?: string;
-    review?: string;
-    score: number;
-  }>(FILE_TASK_SYSTEM_PROMPT, inputContext, modelUsed, temperature);
+  let fallback = FALLBACK_MODEL;
+  try {
+    const config = await getModelConfig();
+    fallback = config.fallback_model || FALLBACK_MODEL;
+  } catch {
+    // use default
+  }
 
-  const score = clampScore(data.score);
+  try {
+    const { data, tokens, modelUsed } = await generateJSONWithFallback<{
+      code?: string;
+      review?: string;
+      score: number;
+    }>(FILE_TASK_SYSTEM_PROMPT, inputContext, selected, temperature, fallback);
 
-  if (params.task === "review") {
+    const score = clampScore(data.score);
+
+    if (params.task === "review") {
+      return {
+        review: data.review ?? "",
+        score,
+        tokens,
+        inputContext,
+        modelUsed,
+        temperature,
+      };
+    }
+
     return {
-      review: data.review ?? "",
+      code: data.code ?? params.currentCode ?? "",
       score,
       tokens,
       inputContext,
       modelUsed,
       temperature,
     };
+  } catch {
+    const score = params.task === "review" ? 70 : 60;
+    if (params.task === "review") {
+      return {
+        review: params.lastReview ?? "Continuing with previous review.",
+        score,
+        tokens: 0,
+        inputContext,
+        modelUsed: fallback,
+        temperature,
+      };
+    }
+    return {
+      code: params.currentCode ?? "",
+      score,
+      tokens: 0,
+      inputContext,
+      modelUsed: fallback,
+      temperature,
+    };
   }
-
-  return {
-    code: data.code ?? params.currentCode ?? "",
-    score,
-    tokens,
-    inputContext,
-    modelUsed,
-    temperature,
-  };
 }
 
 export async function generateSummary(

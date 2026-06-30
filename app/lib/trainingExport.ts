@@ -3,6 +3,36 @@ import type { TrainingDataRow } from "./settingsTypes";
 const OPENAI_SYSTEM_PROMPT =
   "You are a loop refining AI. Generate high-quality code, review it honestly, and refine based on critique until production-ready.";
 
+export type LlamaAlpacaExample = {
+  instruction: string;
+  input: string;
+  output: string;
+};
+
+export function toLlamaAlpacaFromClean(row: {
+  target: string;
+  input_context: string | null;
+  final_output: string;
+  output?: string;
+}): LlamaAlpacaExample {
+  return {
+    instruction: `Generate, critique and refine code for: ${row.target}`,
+    input: row.input_context ?? "",
+    output: row.final_output || row.output || "",
+  };
+}
+
+export function toLlamaAlpacaJSONL(
+  rows: Array<{
+    target: string;
+    input_context: string | null;
+    final_output: string;
+    output?: string;
+  }>
+): string {
+  return rows.map((row) => JSON.stringify(toLlamaAlpacaFromClean(row))).join("\n");
+}
+
 export type OpenAIFineTuningExample = {
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
 };

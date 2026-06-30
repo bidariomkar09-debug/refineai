@@ -22,14 +22,19 @@ export async function uploadFineTuningFile(
   return uploaded.id;
 }
 
+export function buildVersionSuffix(runNumber: number): string {
+  return `refineai-loop-v${runNumber}`;
+}
+
 export async function createFineTuningJob(
-  fileId: string
+  fileId: string,
+  suffix = FINE_TUNE_SUFFIX
 ): Promise<{ jobId: string; status: string }> {
   const client = getOpenAIClient();
   const job = await client.fineTuning.jobs.create({
     training_file: fileId,
     model: FINE_TUNE_BASE_MODEL,
-    suffix: FINE_TUNE_SUFFIX,
+    suffix,
   });
   if (!job.id) throw new OpenAIClientError("Failed to create fine-tuning job", 502);
   return { jobId: job.id, status: job.status };

@@ -7,6 +7,7 @@ import BottomNav from "@/app/components/mobile/BottomNav";
 import MobileHeader from "@/app/components/mobile/MobileHeader";
 import SlideDrawer from "@/app/components/mobile/SlideDrawer";
 import SidebarNav from "./SidebarNav";
+import HelpWidget from "@/app/components/help/HelpWidget";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -68,6 +69,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <BottomNav />
       </div>
+      <HelpWidget />
     </div>
   );
 }

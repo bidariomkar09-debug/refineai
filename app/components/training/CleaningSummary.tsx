@@ -4,16 +4,20 @@ type CleaningSummaryProps = {
   summary: CleaningSummary;
   cleaning: boolean;
   exporting: boolean;
+  exportingLlama?: boolean;
   onClean: () => void;
   onExport: () => void;
+  onExportLlama?: () => void;
 };
 
 export default function CleaningSummaryPanel({
   summary,
   cleaning,
   exporting,
+  exportingLlama = false,
   onClean,
   onExport,
+  onExportLlama,
 }: CleaningSummaryProps) {
   const hasCleaned = summary.cleanedAt !== null;
 
@@ -40,6 +44,16 @@ export default function CleaningSummaryPanel({
         >
           {exporting ? "Exporting…" : "Export Clean JSONL (Training Set)"}
         </button>
+        {onExportLlama && (
+          <button
+            type="button"
+            disabled={summary.trainingSet === 0 || exportingLlama}
+            onClick={onExportLlama}
+            className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2 text-sm text-emerald-300 hover:border-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {exportingLlama ? "Exporting…" : "Export for Llama Fine Tuning"}
+          </button>
+        )}
       </div>
 
       {hasCleaned && (

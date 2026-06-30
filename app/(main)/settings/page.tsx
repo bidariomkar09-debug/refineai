@@ -5,6 +5,8 @@ import { AI_MODELS } from "@/app/lib/settingsTypes";
 import PageHeader from "@/app/components/shell/PageHeader";
 import LoadingState from "@/app/components/shell/LoadingState";
 import { useTheme } from "@/app/components/shell/ThemeProvider";
+import ModelConfigSection from "@/app/components/settings/ModelConfigSection";
+import ModelProvidersSection from "@/app/components/settings/ModelProvidersSection";
 
 type SettingsForm = {
   account_name: string;
@@ -221,6 +223,10 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+
+        <ModelConfigSection />
+
+        <ModelProvidersSection />
 
         <section className="rounded-xl border border-white/10 bg-[#16161f] p-5">
           <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-gray-400">

@@ -47,6 +47,7 @@ export default function TrainingDataPage() {
   const [cleaningSummary, setCleaningSummary] = useState<CleaningSummary>(EMPTY_CLEANING_SUMMARY);
   const [cleaning, setCleaning] = useState(false);
   const [exportingClean, setExportingClean] = useState(false);
+  const [exportingLlama, setExportingLlama] = useState(false);
 
   const [successfulOnly, setSuccessfulOnly] = useState(false);
   const [minScore95, setMinScore95] = useState(false);
@@ -152,6 +153,23 @@ export default function TrainingDataPage() {
     }
   };
 
+  const handleExportLlama = async () => {
+    setExportingLlama(true);
+    try {
+      const res = await fetch("/api/training-data/clean/export/llama");
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "refineai-llama-alpaca.jsonl";
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportingLlama(false);
+    }
+  };
+
   if (loading && stats.totalExamples === 0) {
     return (
       <div>
@@ -193,6 +211,8 @@ export default function TrainingDataPage() {
         exporting={exportingClean}
         onClean={handleClean}
         onExport={handleExportClean}
+        onExportLlama={handleExportLlama}
+        exportingLlama={exportingLlama}
       />
 
       <FineTuningManager

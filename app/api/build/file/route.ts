@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getModel, getTemperature } from "@/app/lib/agentAI";
+import { getTemperature, modelUsedLabel, selectModelForRequest } from "@/app/lib/agentAI";
 import {
   completeFile,
   createTrainingSession,
@@ -79,7 +79,11 @@ export async function POST(request: NextRequest) {
 
     let sessionId: string | null = null;
     try {
-      const [model, temperature] = await Promise.all([getModel(), getTemperature()]);
+      const [resolved, temperature] = await Promise.all([
+        selectModelForRequest(),
+        getTemperature(),
+      ]);
+      const model = modelUsedLabel(resolved);
       sessionId = await createTrainingSession(userIdea, model, temperature);
     } catch {
       sessionId = null;

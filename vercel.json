@@ -6,6 +6,15 @@
   "installCommand": "npm install",
   "regions": ["iad1"],
   "functions": {
+    "app/api/training-pipeline/process/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/training-pipeline/trigger-check/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/inngest/route.ts": {
+      "maxDuration": 300
+    },
     "app/api/plan/route.ts": {
       "maxDuration": 300
     },
@@ -24,5 +33,19 @@
   },
   "env": {
     "OPENAI_MODEL": "gpt-4o"
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/model-config/rollout-check",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/training-pipeline/trigger-check",
+      "schedule": "0 10 * * 0"
+    },
+    {
+      "path": "/api/training-pipeline/process",
+      "schedule": "0 * * * *"
+    }
+  ]
 }
