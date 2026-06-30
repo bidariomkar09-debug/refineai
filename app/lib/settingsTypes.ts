@@ -144,6 +144,82 @@ export type TrainingDataResponse = {
   sessions: TrainingDataSessionRow[];
 };
 
+export type TrainingDataCleanRow = {
+  id?: string;
+  source_id: string | null;
+  session_id: string | null;
+  project_id: string | null;
+  target: string;
+  input_context: string | null;
+  output: string;
+  critique: string;
+  final_output: string;
+  score_after: number;
+  rounds_to_complete: number;
+  model_used: string | null;
+  file_type: string | null;
+  project_type: string | null;
+  task_type: string | null;
+  split: "train" | "test";
+  cleaned_at: string;
+};
+
+export type CleaningSummary = {
+  totalRaw: number;
+  afterCleaning: number;
+  trainingSet: number;
+  testSet: number;
+  readyForFineTuning: boolean;
+  cleanedAt: string | null;
+};
+
+export type FineTunedModelStatus =
+  | "pending"
+  | "uploading"
+  | "uploaded"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed";
+
+export type FineTunedModel = {
+  id: string;
+  model_id: string | null;
+  base_model: string;
+  status: FineTunedModelStatus;
+  training_examples_used: number;
+  openai_file_id: string | null;
+  job_id: string | null;
+  activated: boolean;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FineTuningJobStatus = {
+  jobId: string | null;
+  status: FineTunedModelStatus;
+  modelId: string | null;
+  trainedTokens: number | null;
+  estimatedFinish: string | null;
+  errorMessage: string | null;
+  progressPercent: number | null;
+};
+
+export type ModelComparisonResult = {
+  prompt: string;
+  baseModel: string;
+  fineTunedModel: string;
+  baseOutput: string;
+  fineTunedOutput: string;
+  baseScore: number;
+  fineTunedScore: number;
+  baseRounds: number;
+  fineTunedRounds: number;
+  winner: "base" | "fine_tuned" | "tie";
+  roundsWinner: "base" | "fine_tuned" | "tie";
+};
+
 export type EvaluationStats = {
   projectScores: Array<{ name: string; score: number }>;
   roundScores: Array<{ round: number; score: number }>;

@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { FileTask, ProjectPlan } from "./agentTypes";
-import { getUserSettings } from "./db";
+import { getActivatedFineTunedModel, getUserSettings } from "./db";
 
 export class OpenAIClientError extends Error {
   constructor(
@@ -31,6 +31,22 @@ export async function getTemperature(): Promise<number> {
   } catch {
     return 0.7;
   }
+}
+
+export async function getActiveModel(): Promise<string> {
+  try {
+    const activated = await getActivatedFineTunedModel();
+    if (activated?.model_id) return activated.model_id;
+  } catch {
+    // fall through
+  }
+  try {
+    const settings = await getUserSettings();
+    if (settings.selected_model?.startsWith("ft:")) return settings.selected_model;
+  } catch {
+    // fall through
+  }
+  return getModel();
 }
 
 function clampScore(score: unknown): number {
@@ -147,7 +163,7 @@ export async function callFileTask(params: {
   }
 > {
   const inputContext = buildFileTaskUserPrompt(params);
-  const modelUsed = getModel();
+  const modelUsed = await getActiveModel();
   const temperature = await getTemperature();
 
   const { data, tokens } = await generateJSON<{

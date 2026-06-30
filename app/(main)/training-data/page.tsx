@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
+  CleaningSummary,
   TrainingDataResponse,
   TrainingDataSessionRow,
   TrainingDataStats,
@@ -12,6 +13,8 @@ import SkeletonCard from "@/app/components/mobile/SkeletonCard";
 import EmptyState from "@/app/components/shell/EmptyState";
 import TrainingReadiness from "@/app/components/training/TrainingReadiness";
 import TrainingTable from "@/app/components/training/TrainingTable";
+import CleaningSummaryPanel from "@/app/components/training/CleaningSummary";
+import FineTuningManager from "@/app/components/training/FineTuningManager";
 
 const FILE_TYPES = [".tsx", ".ts", ".css", ".json", ".md", ".sql", ".jsx", ".js"] as const;
 
@@ -27,11 +30,23 @@ const EMPTY_STATS: TrainingDataStats = {
   milestones: { bronze: false, silver: false, gold: false, diamond: false },
 };
 
+const EMPTY_CLEANING_SUMMARY: CleaningSummary = {
+  totalRaw: 0,
+  afterCleaning: 0,
+  trainingSet: 0,
+  testSet: 0,
+  readyForFineTuning: false,
+  cleanedAt: null,
+};
+
 export default function TrainingDataPage() {
   const [stats, setStats] = useState<TrainingDataStats>(EMPTY_STATS);
   const [sessions, setSessions] = useState<TrainingDataSessionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<string | null>(null);
+  const [cleaningSummary, setCleaningSummary] = useState<CleaningSummary>(EMPTY_CLEANING_SUMMARY);
+  const [cleaning, setCleaning] = useState(false);
+  const [exportingClean, setExportingClean] = useState(false);
 
   const [successfulOnly, setSuccessfulOnly] = useState(false);
   const [minScore95, setMinScore95] = useState(false);
@@ -57,11 +72,22 @@ export default function TrainingDataPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/training-data${queryString}`);
-      if (!res.ok) throw new Error("Failed");
-      const data: TrainingDataResponse = await res.json();
-      setStats(data.stats ?? EMPTY_STATS);
-      setSessions(data.sessions ?? []);
+      const [dataRes, cleanRes] = await Promise.all([
+        fetch(`/api/training-data${queryString}`),
+        fetch("/api/training-data/clean"),
+      ]);
+      if (dataRes.ok) {
+        const data: TrainingDataResponse = await dataRes.json();
+        setStats(data.stats ?? EMPTY_STATS);
+        setSessions(data.sessions ?? []);
+      } else {
+        setStats(EMPTY_STATS);
+        setSessions([]);
+      }
+      if (cleanRes.ok) {
+        const cleanData = await cleanRes.json();
+        setCleaningSummary(cleanData.summary ?? EMPTY_CLEANING_SUMMARY);
+      }
     } catch {
       setStats(EMPTY_STATS);
       setSessions([]);
@@ -91,6 +117,38 @@ export default function TrainingDataPage() {
       URL.revokeObjectURL(url);
     } finally {
       setExporting(null);
+    }
+  };
+
+  const handleClean = async () => {
+    setCleaning(true);
+    try {
+      const res = await fetch("/api/training-data/clean", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setCleaningSummary(data.summary ?? EMPTY_CLEANING_SUMMARY);
+      }
+    } catch {
+      // silent
+    } finally {
+      setCleaning(false);
+    }
+  };
+
+  const handleExportClean = async () => {
+    setExportingClean(true);
+    try {
+      const res = await fetch("/api/training-data/clean/export");
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "refineai-clean-finetuning.jsonl";
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportingClean(false);
     }
   };
 
@@ -128,6 +186,19 @@ export default function TrainingDataPage() {
       </div>
 
       <TrainingReadiness stats={stats} />
+
+      <CleaningSummaryPanel
+        summary={cleaningSummary}
+        cleaning={cleaning}
+        exporting={exportingClean}
+        onClean={handleClean}
+        onExport={handleExportClean}
+      />
+
+      <FineTuningManager
+        canUpload={cleaningSummary.trainingSet > 0}
+        trainingSetCount={cleaningSummary.trainingSet}
+      />
 
       <section className="mb-6 rounded-xl border border-white/10 bg-[#16161f] p-5">
         <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-gray-400">

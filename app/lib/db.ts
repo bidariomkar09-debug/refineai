@@ -11,10 +11,14 @@ import type {
   ProjectStatus,
 } from "./agentTypes";
 import type {
+  CleaningSummary,
   DashboardStats,
   DatasetFile,
   EvaluationStats,
+  FineTunedModel,
+  FineTunedModelStatus,
   ProjectWithStats,
+  TrainingDataCleanRow,
   TrainingDataFilters,
   TrainingDataFinalize,
   TrainingDataInsert,
@@ -23,6 +27,7 @@ import type {
   TrainingDataStats,
   UserSettings,
 } from "./settingsTypes";
+import { EMPTY_CLEANING_SUMMARY } from "./trainingClean";
 
 let client: SupabaseClient | null = null;
 
@@ -724,4 +729,186 @@ export async function getTrainingDataCount(): Promise<number> {
 
 export async function getAllTrainingData(): Promise<TrainingDataRow[]> {
   return getTrainingDataForExport();
+}
+
+// --- Training data clean ---
+
+function isCleanTableMissing(error: { message?: string; code?: string } | null): boolean {
+  return isTrainingTableMissing(error);
+}
+
+export async function replaceTrainingDataClean(rows: TrainingDataCleanRow[]): Promise<void> {
+  const { error: deleteError } = await getClient()
+    .from("training_data_clean")
+    .delete()
+    .in("split", ["train", "test"]);
+  if (isCleanTableMissing(deleteError)) return;
+  if (deleteError) throw new DbError(deleteError.message);
+
+  if (rows.length === 0) return;
+
+  const { error: insertError } = await getClient().from("training_data_clean").insert(
+    rows.map((row) => ({
+      source_id: row.source_id,
+      session_id: row.session_id,
+      project_id: row.project_id,
+      target: row.target,
+      input_context: row.input_context,
+      output: row.output,
+      critique: row.critique,
+      final_output: row.final_output,
+      score_after: row.score_after,
+      rounds_to_complete: row.rounds_to_complete,
+      model_used: row.model_used,
+      file_type: row.file_type,
+      project_type: row.project_type,
+      task_type: row.task_type,
+      split: row.split,
+      cleaned_at: row.cleaned_at,
+    }))
+  );
+  if (insertError) throw new DbError(insertError.message);
+}
+
+export async function getTrainingDataClean(
+  split?: "train" | "test"
+): Promise<TrainingDataCleanRow[]> {
+  let query = getClient().from("training_data_clean").select("*").order("cleaned_at", {
+    ascending: true,
+  });
+  if (split) query = query.eq("split", split);
+  const { data, error } = await query;
+  if (isCleanTableMissing(error)) return [];
+  if (error) throw new DbError(error.message);
+  return (data ?? []) as TrainingDataCleanRow[];
+}
+
+export async function getCleaningSummaryFromClean(
+  totalRaw?: number
+): Promise<CleaningSummary> {
+  const rows = await getTrainingDataClean();
+  if (rows.length === 0) {
+    return {
+      ...EMPTY_CLEANING_SUMMARY,
+      totalRaw: totalRaw ?? 0,
+    };
+  }
+
+  const trainingSet = rows.filter((r) => r.split === "train").length;
+  const testSet = rows.filter((r) => r.split === "test").length;
+  const cleanedAt = rows[rows.length - 1]?.cleaned_at ?? null;
+
+  return {
+    totalRaw: totalRaw ?? rows.length,
+    afterCleaning: rows.length,
+    trainingSet,
+    testSet,
+    readyForFineTuning: trainingSet >= 100,
+    cleanedAt,
+  };
+}
+
+// --- Fine-tuned models ---
+
+function isFineTunedTableMissing(error: { message?: string; code?: string } | null): boolean {
+  return (
+    !!error?.message?.includes("does not exist") ||
+    !!error?.message?.includes("Could not find the table") ||
+    error?.code === "PGRST205"
+  );
+}
+
+export async function createFineTunedModelRecord(
+  trainingExamplesUsed: number
+): Promise<FineTunedModel> {
+  const { data, error } = await getClient()
+    .from("fine_tuned_models")
+    .insert({
+      base_model: "gpt-4o-2024-08-06",
+      status: "pending",
+      training_examples_used: trainingExamplesUsed,
+    })
+    .select()
+    .single();
+  if (error || !data) throw new DbError(error?.message ?? "Failed to create fine-tune record");
+  return data as FineTunedModel;
+}
+
+export async function updateFineTunedModel(
+  id: string,
+  partial: Partial<
+    Pick<
+      FineTunedModel,
+      | "model_id"
+      | "status"
+      | "openai_file_id"
+      | "job_id"
+      | "activated"
+      | "error_message"
+      | "training_examples_used"
+    >
+  >
+): Promise<FineTunedModel> {
+  const { data, error } = await getClient()
+    .from("fine_tuned_models")
+    .update({ ...partial, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error || !data) throw new DbError(error?.message ?? "Failed to update fine-tune record");
+  return data as FineTunedModel;
+}
+
+export async function getLatestFineTunedModel(): Promise<FineTunedModel | null> {
+  const { data, error } = await getClient()
+    .from("fine_tuned_models")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (isFineTunedTableMissing(error)) return null;
+  if (error) throw new DbError(error.message);
+  return (data as FineTunedModel) ?? null;
+}
+
+export async function getActivatedFineTunedModel(): Promise<FineTunedModel | null> {
+  const { data, error } = await getClient()
+    .from("fine_tuned_models")
+    .select("*")
+    .eq("activated", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (isFineTunedTableMissing(error)) return null;
+  if (error) throw new DbError(error.message);
+  return (data as FineTunedModel) ?? null;
+}
+
+export async function activateFineTunedModel(id: string): Promise<FineTunedModel> {
+  await getClient()
+    .from("fine_tuned_models")
+    .update({ activated: false, updated_at: new Date().toISOString() })
+    .eq("activated", true);
+
+  const record = await updateFineTunedModel(id, { activated: true, status: "succeeded" });
+
+  if (record.model_id) {
+    await upsertUserSettings({ selected_model: record.model_id });
+  }
+
+  return record;
+}
+
+export async function syncFineTunedJobStatus(
+  id: string,
+  status: FineTunedModelStatus,
+  modelId: string | null,
+  errorMessage: string | null
+): Promise<FineTunedModel> {
+  const partial: Parameters<typeof updateFineTunedModel>[1] = {
+    status,
+    error_message: errorMessage,
+  };
+  if (modelId) partial.model_id = modelId;
+  return updateFineTunedModel(id, partial);
 }
