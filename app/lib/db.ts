@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import type {
+  ChatMode,
   DbFile,
   DbFileRound,
   DbMessage,
@@ -228,18 +229,106 @@ export async function saveFileRound(
   if (error) throw new DbError(error.message);
 }
 
+export async function createProjectShell(
+  name: string,
+  description: string
+): Promise<DbProject> {
+  const plan: ProjectPlan = {
+    name,
+    description,
+    niche: "general",
+    techStack: {
+      frontend: "Next.js",
+      backend: "Next.js API",
+      database: "Supabase",
+      ai: "OpenAI",
+      styling: "Tailwind CSS",
+      deploy: "Vercel",
+    },
+    files: [],
+    apiRoutes: [],
+    estimatedFiles: 0,
+  };
+  return createProject(plan);
+}
+
+export async function updateFileContent(
+  id: string,
+  content: string
+): Promise<DbFile> {
+  const { data, error } = await getClient()
+    .from("files")
+    .update({ content })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error || !data) throw new DbError(error?.message ?? "Failed to update file");
+  return data as DbFile;
+}
+
+export async function savePlanMarkdown(
+  projectId: string,
+  markdown: string
+): Promise<void> {
+  const { data: existing } = await getClient()
+    .from("files")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("file_path", "PLAN.md")
+    .maybeSingle();
+
+  if (existing?.id) {
+    await getClient()
+      .from("files")
+      .update({ content: markdown, status: "done", score: 100 })
+      .eq("id", existing.id);
+    return;
+  }
+
+  const { error } = await getClient().from("files").insert({
+    project_id: projectId,
+    file_path: "PLAN.md",
+    file_name: "PLAN.md",
+    content: markdown,
+    status: "done",
+    score: 100,
+    sort_order: -1,
+  });
+  if (error) throw new DbError(error.message);
+}
+
 export async function addMessage(
   projectId: string,
   role: "user" | "assistant",
   content: string,
   type: MessageType = "chat",
-  metadata: Record<string, unknown> = {}
+  metadata: Record<string, unknown> = {},
+  mode: ChatMode = "agent"
 ): Promise<DbMessage> {
+  const row: Record<string, unknown> = {
+    project_id: projectId,
+    role,
+    content,
+    type,
+    metadata,
+    mode,
+  };
   const { data, error } = await getClient()
     .from("messages")
-    .insert({ project_id: projectId, role, content, type, metadata })
+    .insert(row)
     .select()
     .single();
+  if (error?.message?.includes("mode") || error?.code === "PGRST204") {
+    const { data: fallback, error: fallbackErr } = await getClient()
+      .from("messages")
+      .insert({ project_id: projectId, role, content, type, metadata })
+      .select()
+      .single();
+    if (fallbackErr || !fallback) {
+      throw new DbError(fallbackErr?.message ?? "Failed to save message");
+    }
+    return { ...(fallback as DbMessage), mode };
+  }
   if (error || !data) throw new DbError(error?.message ?? "Failed to save message");
   return data as DbMessage;
 }
@@ -550,18 +639,32 @@ function buildMilestones(total: number): TrainingDataStats["milestones"] {
 export async function createTrainingSession(
   target: string,
   model = "gpt-4o",
-  temperature = 0.7
+  temperature = 0.7,
+  mode: ChatMode = "agent"
 ): Promise<string> {
+  const row: Record<string, unknown> = {
+    target,
+    status: "running",
+    model,
+    temperature,
+    mode,
+  };
   const { data, error } = await getClient()
     .from("sessions")
-    .insert({
-      target,
-      status: "running",
-      model,
-      temperature,
-    })
+    .insert(row)
     .select("id")
     .single();
+  if (error?.message?.includes("mode") || error?.code === "PGRST204") {
+    const { data: fallback, error: fallbackErr } = await getClient()
+      .from("sessions")
+      .insert({ target, status: "running", model, temperature })
+      .select("id")
+      .single();
+    if (fallbackErr || !fallback) {
+      throw new DbError(fallbackErr?.message ?? "Failed to create training session");
+    }
+    return fallback.id as string;
+  }
   if (error || !data) throw new DbError(error?.message ?? "Failed to create training session");
   return data.id as string;
 }

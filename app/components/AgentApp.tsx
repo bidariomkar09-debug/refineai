@@ -4,13 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   BuildPhase,
   ChatMessage,
+  ChatMode,
   DbFile,
   DbProject,
+  DebugProposal,
   FileRoundEvent,
   ProjectPlan,
 } from "@/app/lib/agentTypes";
 import { fetchStream } from "@/app/lib/streamClient";
 import { meetsQualityThreshold } from "@/app/lib/agentTypes";
+import { getStoredMode, setStoredMode, isValidChatMode } from "@/app/lib/chatModes";
 import { startBuild, runQualityPass, type OrchestratorControls } from "@/app/lib/buildOrchestrator";
 import {
   mergeProjectFiles,
@@ -74,6 +77,38 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
   const [awaitingChanges, setAwaitingChanges] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [planIntro, setPlanIntro] = useState<string | null>(null);
+  const [chatMode, setChatMode] = useState<ChatMode>("agent");
+  const [awaitingPlanChanges, setAwaitingPlanChanges] = useState(false);
+  const [appliedDebugMessageIds, setAppliedDebugMessageIds] = useState<Set<string>>(
+    new Set()
+  );
+
+  useEffect(() => {
+    setChatMode(getStoredMode());
+  }, []);
+
+  const handleModeChange = useCallback((mode: ChatMode) => {
+    setChatMode(mode);
+    setStoredMode(mode);
+  }, []);
+
+  const inputDisabled = useMemo(() => {
+    if (isLoading) return true;
+    if (chatMode === "ask") return false;
+    if (chatMode === "debug") return !projectId;
+    if (chatMode === "plan") return phase === "building" || phase === "complete";
+    return phase === "complete" || (phase === "planning" && isLoading);
+  }, [chatMode, isLoading, phase, projectId]);
+
+  const showBuild = useMemo(
+    () =>
+      chatMode === "agent" &&
+      showConfirm &&
+      phase === "awaiting_confirm" &&
+      !!plan &&
+      !isLoading,
+    [chatMode, showConfirm, phase, plan, isLoading]
+  );
 
   const [centerTab, setCenterTab] = useState<CenterTab>("plan");
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
@@ -147,27 +182,21 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
 
   const handleSelectFile = useCallback(
     (file: ExplorerFile) => {
+      setSelectedFileId(file.id);
+
       if (file.isVirtual) {
-        setSelectedFileId(file.id);
-        setCenterTab("code");
         setViewerCode("");
-        if (isMobile) setCodeModalOpen(true);
-        setFileSheetOpen(false);
-        setTabletSidebarExpanded(false);
-        return;
+      } else {
+        const isLive =
+          file.id === activeFileIdRef.current && file.status === "building";
+        setViewerCode(isLive ? currentCode : file.content ?? "");
       }
 
-      setSelectedFileId(file.id);
-      setCenterTab("code");
-
-      const isLive =
-        file.id === activeFileIdRef.current && file.status === "building";
-      setViewerCode(isLive ? currentCode : file.content ?? "");
-      if (isMobile) setCodeModalOpen(true);
+      setCodeModalOpen(true);
       setFileSheetOpen(false);
       setTabletSidebarExpanded(false);
     },
-    [currentCode, isMobile]
+    [currentCode]
   );
 
   const handleRunApp = useCallback(async () => {
@@ -313,8 +342,21 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           role: "user" | "assistant";
           content: string;
           type: string;
+          mode?: string;
           metadata: Record<string, unknown>;
         }) => {
+          const mode = isValidChatMode(m.mode ?? "") ? (m.mode as ChatMode) : undefined;
+          if (m.type === "plan" && mode === "plan") {
+            const markdown = m.metadata?.planMarkdown as string | undefined;
+            return {
+              id: m.id,
+              role: m.role,
+              content: markdown ?? m.content,
+              type: "chat" as const,
+              mode: "plan",
+              metadata: m.metadata,
+            };
+          }
           if (m.type === "plan") {
             const metaPlan = m.metadata?.plan as ProjectPlan | undefined;
             return {
@@ -326,6 +368,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
                   ? getPlanIntro(loadedPlan)
                   : "Here's your project plan.",
               type: "chat" as const,
+              mode: mode ?? "agent",
               metadata: m.metadata,
             };
           }
@@ -334,6 +377,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
             role: m.role,
             content: m.content,
             type: m.type as ChatMessage["type"],
+            mode,
             metadata: m.metadata,
           };
         }
@@ -358,7 +402,6 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           setShowConfirm(false);
           setSummaryPlan(null);
           setStatusMessage(USER_MESSAGES.fixing);
-          setCenterTab("code");
           setIsLoading(false);
 
           buildAbortRef.current = new AbortController();
@@ -373,7 +416,6 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
                 setCurrentCode("");
                 setCurrentRound(null);
                 setActiveProgress({ fileName: file.file_name, round: null });
-                setCenterTab("code");
                 setFiles((prev) =>
                   syncFileIntoList(prev, { ...file, status: "building" })
                 );
@@ -453,7 +495,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
       setStatusMessage(USER_MESSAGES.planning);
       setMessages((prev) => [
         ...prev,
-        { id: newId(), role: "user", content: idea, type: "chat" },
+        { id: newId(), role: "user", content: idea, type: "chat", mode: "agent" },
       ]);
 
       let gotPlan = false;
@@ -489,6 +531,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
               role: "assistant",
               content: intro,
               type: "chat",
+              mode: "agent",
             },
           ]);
           refreshFiles(event.projectId);
@@ -539,6 +582,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
               role: "assistant",
               content: intro,
               type: "chat",
+              mode: "agent",
             },
           ]);
           refreshFiles(event.projectId);
@@ -551,8 +595,272 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
     [projectId, phase, refreshFiles]
   );
 
+  const handleAsk = useCallback(
+    async (text: string) => {
+      setIsLoading(true);
+      setMessages((prev) => [
+        ...prev,
+        { id: newId(), role: "user", content: text, type: "chat", mode: "ask" },
+      ]);
+
+      await fetchStream(
+        "/api/ask",
+        { message: text, projectId: projectId ?? undefined },
+        (event) => {
+          if (event.type === "status") {
+            setStatusMessage(event.message);
+          } else if (event.type === "message") {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: newId(),
+                role: "assistant",
+                content: event.content,
+                type: "chat",
+                mode: "ask",
+              },
+            ]);
+          } else if (event.type === "error") {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: newId(),
+                role: "assistant",
+                content: event.message,
+                type: "chat",
+                mode: "ask",
+              },
+            ]);
+          }
+        }
+      );
+
+      setIsLoading(false);
+      setStatusMessage("");
+    },
+    [projectId]
+  );
+
+  const handlePlanMode = useCallback(
+    async (text: string) => {
+      setIsLoading(true);
+      setShowConfirm(false);
+      setMessages((prev) => [
+        ...prev,
+        { id: newId(), role: "user", content: text, type: "chat", mode: "plan" },
+      ]);
+
+      await fetchStream(
+        "/api/modes/plan",
+        {
+          message: text,
+          projectId: projectId ?? undefined,
+          revise: awaitingPlanChanges,
+        },
+        (event) => {
+          if (event.type === "status") {
+            setStatusMessage(event.message);
+          } else if (event.type === "plan_question") {
+            setProjectId(event.projectId);
+            setAwaitingPlanChanges(false);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: newId(),
+                role: "assistant",
+                content: event.content,
+                type: "chat",
+                mode: "plan",
+              },
+            ]);
+          } else if (event.type === "plan_ready") {
+            setProjectId(event.projectId);
+            setPlan(event.data.plan);
+            setPlanIntro(event.data.markdown);
+            setPhase("awaiting_confirm");
+            setAwaitingPlanChanges(false);
+            setCenterTab("plan");
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: newId(),
+                role: "assistant",
+                content: event.data.markdown,
+                type: "chat",
+                mode: "plan",
+                metadata: {
+                  plan: event.data.plan,
+                  planMarkdown: event.data.markdown,
+                  showPlanActions: true,
+                },
+              },
+            ]);
+            refreshFiles(event.projectId);
+            loadProjects();
+          } else if (event.type === "error") {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: newId(),
+                role: "assistant",
+                content: event.message,
+                type: "chat",
+                mode: "plan",
+              },
+            ]);
+          }
+        }
+      );
+
+      setIsLoading(false);
+      setStatusMessage("");
+    },
+    [projectId, awaitingPlanChanges, refreshFiles, loadProjects]
+  );
+
+  const handleDebug = useCallback(
+    async (text: string) => {
+      if (!projectId) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: newId(),
+            role: "assistant",
+            content: "Open a built project to use Debug mode.",
+            type: "chat",
+            mode: "debug",
+          },
+        ]);
+        return;
+      }
+
+      setIsLoading(true);
+      setMessages((prev) => [
+        ...prev,
+        { id: newId(), role: "user", content: text, type: "chat", mode: "debug" },
+      ]);
+
+      await fetchStream("/api/debug", { projectId, message: text }, (event) => {
+        if (event.type === "status") {
+          setStatusMessage(event.message);
+        } else if (event.type === "message") {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: newId(),
+              role: "assistant",
+              content: event.content,
+              type: "chat",
+              mode: "debug",
+            },
+          ]);
+        } else if (event.type === "debug") {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: newId(),
+              role: "assistant",
+              content: event.content,
+              type: "chat",
+              mode: "debug",
+              metadata: {
+                debugProposal: event.data,
+                showDebugActions: true,
+              },
+            },
+          ]);
+        } else if (event.type === "error") {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: newId(),
+              role: "assistant",
+              content: event.message,
+              type: "chat",
+              mode: "debug",
+            },
+          ]);
+        }
+      });
+
+      setIsLoading(false);
+      setStatusMessage("");
+    },
+    [projectId]
+  );
+
+  const handlePlanModify = useCallback(() => {
+    setAwaitingPlanChanges(true);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: newId(),
+        role: "assistant",
+        content: "What would you like to change in the plan?",
+        type: "chat",
+        mode: "plan",
+      },
+    ]);
+  }, []);
+
+  const handleDebugApply = useCallback(
+    async (proposal: DebugProposal, messageId: string) => {
+      setIsLoading(true);
+      try {
+        const res = await fetch("/api/debug/apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileId: proposal.fileId,
+            fixedContent: proposal.fixedContent,
+          }),
+        });
+        if (res.ok && projectId) {
+          await refreshFiles(projectId);
+          setAppliedDebugMessageIds((prev) => new Set(prev).add(messageId));
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === messageId
+                ? { ...m, metadata: { ...m.metadata, showDebugActions: false } }
+                : m
+            )
+          );
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: newId(),
+              role: "assistant",
+              content: `Applied fix to \`${proposal.filePath}\`.`,
+              type: "chat",
+              mode: "debug",
+            },
+          ]);
+          if (selectedFileId === proposal.fileId) {
+            setViewerCode(proposal.fixedContent);
+          }
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [projectId, refreshFiles, selectedFileId]
+  );
+
   const handleSubmit = useCallback(
     (text: string) => {
+      if (chatMode === "ask") {
+        handleAsk(text);
+        return;
+      }
+      if (chatMode === "plan") {
+        handlePlanMode(text);
+        return;
+      }
+      if (chatMode === "debug") {
+        handleDebug(text);
+        return;
+      }
+
       if (phase === "idle" || phase === "planning") {
         handlePlanIdea(text);
       } else if (
@@ -564,7 +872,16 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
         handleRevision(text);
       }
     },
-    [phase, awaitingChanges, handlePlanIdea, handleRevision]
+    [
+      chatMode,
+      phase,
+      awaitingChanges,
+      handlePlanIdea,
+      handleRevision,
+      handleAsk,
+      handlePlanMode,
+      handleDebug,
+    ]
   );
 
   const handleConfirm = useCallback(async () => {
@@ -598,7 +915,6 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           setViewerCode("");
           setCurrentRound(null);
           setActiveProgress({ fileName: file.file_name, round: null });
-          setCenterTab("code");
           setFiles((prev) =>
             syncFileIntoList(prev, { ...file, status: "building" })
           );
@@ -678,6 +994,28 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
     appendBuildMessage,
     syncPreviewIfRunning,
   ]);
+
+  const handlePlanApprove = useCallback(async () => {
+    if (!projectId || !plan) return;
+    setIsLoading(true);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.metadata?.showPlanActions
+          ? { ...m, metadata: { ...m.metadata, showPlanActions: false } }
+          : m
+      )
+    );
+
+    await fetch("/api/modes/plan/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    });
+
+    await refreshFiles(projectId);
+    setIsLoading(false);
+    await handleConfirm();
+  }, [projectId, plan, refreshFiles, handleConfirm]);
 
   const handleMakeChanges = useCallback(() => {
     setAwaitingChanges(true);
@@ -792,11 +1130,6 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           <CenterPanel
             centerTab={centerTab}
             onTabChange={setCenterTab}
-            selectedFile={selectedFile}
-            viewerCode={viewerCode}
-            activeFileId={activeFile?.id ?? null}
-            activeFile={activeFile}
-            currentRound={currentRound}
             plan={plan}
             phase={phase}
             statusMessage={statusMessage}
@@ -827,11 +1160,19 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
             onPreviewRefresh={handlePreviewRefresh}
             onPreviewRetry={handlePreviewRetry}
             onPreviewViewportChange={setPreviewViewport}
-            hideCodeOnMobile={isMobile}
+            chatMode={chatMode}
           />
 
           <div className="min-h-0 max-h-[35vh] shrink-0 overflow-y-auto border-t border-surface-border lg:hidden">
-            <ChatMessages messages={messages} compact />
+            <ChatMessages
+              messages={messages}
+              compact
+              onPlanApprove={handlePlanApprove}
+              onPlanModify={handlePlanModify}
+              onDebugApply={handleDebugApply}
+              appliedDebugMessageIds={appliedDebugMessageIds}
+              actionsDisabled={isLoading}
+            />
           </div>
         </div>
 
@@ -842,11 +1183,21 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           mergedFiles={mergedFiles}
           isLoading={isLoading}
           awaitingChanges={awaitingChanges}
+          chatMode={chatMode}
+          onModeChange={handleModeChange}
+          inputDisabled={inputDisabled}
           isOpen={chatPanelOpen}
           collapsed={chatPanelCollapsed}
           onClose={() => setChatPanelOpen(false)}
           onToggleCollapse={() => setChatPanelCollapsed((v) => !v)}
           onSubmit={handleSubmit}
+          onPlanApprove={handlePlanApprove}
+          onPlanModify={handlePlanModify}
+          onDebugApply={handleDebugApply}
+          appliedDebugMessageIds={appliedDebugMessageIds}
+          showBuild={showBuild}
+          onBuild={handleConfirm}
+          buildDisabled={isLoading}
         />
       </div>
 
@@ -868,12 +1219,15 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           variant="panel"
           mobile
           onSubmit={handleSubmit}
-          disabled={
-            isLoading || phase === "complete" || (phase === "planning" && isLoading)
-          }
+          disabled={inputDisabled}
           isLoading={isLoading}
           phase={phase}
           awaitingChanges={awaitingChanges}
+          chatMode={chatMode}
+          onModeChange={handleModeChange}
+          showBuild={showBuild}
+          onBuild={handleConfirm}
+          buildDisabled={isLoading}
         />
       </div>
 

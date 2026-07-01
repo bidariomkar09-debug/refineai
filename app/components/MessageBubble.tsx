@@ -5,6 +5,7 @@ type MessageBubbleProps = {
   content: string;
   children?: React.ReactNode;
   compact?: boolean;
+  badge?: React.ReactNode;
 };
 
 export default function MessageBubble({
@@ -12,6 +13,7 @@ export default function MessageBubble({
   content,
   children,
   compact = false,
+  badge,
 }: MessageBubbleProps) {
   const isUser = role === "user";
 
@@ -26,11 +28,10 @@ export default function MessageBubble({
             : "border border-surface-border bg-surface text-gray-200"
         }`}
       >
-        {!children && (
-          <p className={`whitespace-pre-wrap leading-relaxed ${compact ? "text-xs" : "text-sm"}`}>
-            {content}
-          </p>
-        )}
+        {!isUser && badge}
+        <p className={`whitespace-pre-wrap leading-relaxed ${compact ? "text-xs" : "text-sm"}`}>
+          {content}
+        </p>
         {children}
       </div>
     </div>

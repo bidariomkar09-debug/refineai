@@ -64,6 +64,43 @@ export type FileTask = "write" | "review" | "refine";
 export type MessageRole = "user" | "assistant";
 export type MessageType = "chat" | "plan" | "confirm" | "progress" | "complete";
 
+export type ChatMode = "agent" | "ask" | "plan" | "debug";
+
+export type DebugProposal = {
+  analysis: string;
+  rootCause: string;
+  fileId: string;
+  filePath: string;
+  fixedContent: string;
+  debugSnippet?: string;
+};
+
+export type DbMessage = {
+  id: string;
+  project_id: string;
+  role: MessageRole;
+  content: string;
+  type: MessageType;
+  mode?: ChatMode;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  role: MessageRole;
+  content: string;
+  type: MessageType;
+  mode?: ChatMode;
+  metadata?: {
+    plan?: ProjectPlan;
+    planMarkdown?: string;
+    debugProposal?: DebugProposal;
+    showPlanActions?: boolean;
+    showDebugActions?: boolean;
+    [key: string]: unknown;
+  };
+};
 export type DbProject = {
   id: string;
   name: string;
@@ -97,24 +134,6 @@ export type DbFileRound = {
   score: number;
   task: FileTask;
   created_at: string;
-};
-
-export type DbMessage = {
-  id: string;
-  project_id: string;
-  role: MessageRole;
-  content: string;
-  type: MessageType;
-  metadata: Record<string, unknown>;
-  created_at: string;
-};
-
-export type ChatMessage = {
-  id: string;
-  role: MessageRole;
-  content: string;
-  type: MessageType;
-  metadata?: Record<string, unknown>;
 };
 
 export type FileRoundEvent = {
@@ -156,4 +175,12 @@ export type SSEEvent =
   | { type: "file_complete"; fileId: string; score: number }
   | { type: "complete"; data: BuildCompleteEvent }
   | { type: "summary"; data: ProjectPlan & { projectId: string } }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "message"; content: string; mode?: ChatMode }
+  | { type: "plan_question"; content: string; projectId: string }
+  | {
+      type: "plan_ready";
+      data: { plan: ProjectPlan; markdown: string };
+      projectId: string;
+    }
+  | { type: "debug"; data: DebugProposal; content: string; projectId: string };

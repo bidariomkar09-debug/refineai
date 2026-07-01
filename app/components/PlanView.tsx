@@ -15,7 +15,6 @@ type PlanViewProps = {
   statusMessage: string;
   showConfirm: boolean;
   mergedFiles: ExplorerFile[];
-  activeFileId: string | null;
   files: DbFile[];
   isLoading: boolean;
   planIntro: string | null;

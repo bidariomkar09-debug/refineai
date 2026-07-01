@@ -29,16 +29,16 @@ export default function CodeViewerModal({
       <button
         type="button"
         aria-label="Close code viewer"
-        className="fixed inset-0 z-50 bg-black/80 md:hidden"
+        className="fixed inset-0 z-50 bg-black/70"
         onClick={onClose}
       />
-      <div className="fixed inset-0 z-50 flex flex-col bg-surface md:hidden">
+      <div className="fixed inset-0 z-50 flex flex-col bg-surface md:inset-y-0 md:left-auto md:w-full md:max-w-2xl md:border-l md:border-surface-border md:shadow-2xl">
         <div className="flex shrink-0 items-center justify-between border-b border-surface-border px-4 py-3 pt-safe">
           <p className="min-w-0 flex-1 truncate text-sm font-medium text-white">{file.file_path}</p>
           <button
             type="button"
             onClick={onClose}
-            className="touch-target touch-press ml-2 rounded-lg p-2 text-gray-400 hover:bg-surface-raised"
+            className="touch-target touch-press ml-2 rounded-lg p-2 text-gray-400 hover:bg-surface-raised hover:text-white"
             aria-label="Close"
           >
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

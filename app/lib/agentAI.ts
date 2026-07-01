@@ -223,3 +223,28 @@ export async function revisePlan(
   );
   return { ...currentPlan, ...data, estimatedFiles: data.files?.length ?? currentPlan.estimatedFiles };
 }
+
+export async function generateText(
+  system: string,
+  user: string,
+  temperature?: number
+): Promise<{ content: string; tokens: number }> {
+  const temp = temperature ?? (await getTemperature());
+  const resolved = await selectModelForRequest();
+  const client = getOpenAIClient();
+  const response = await client.chat.completions.create({
+    model: resolved.modelId,
+    temperature: temp,
+    max_tokens: 4096,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+  const content = response.choices[0]?.message?.content ?? "";
+  return {
+    content,
+    tokens: response.usage?.total_tokens ?? Math.ceil(content.length / 4),
+  };
+}
+

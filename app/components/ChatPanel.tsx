@@ -1,6 +1,6 @@
 "use client";
 
-import type { BuildPhase, ChatMessage, ProjectPlan } from "@/app/lib/agentTypes";
+import type { BuildPhase, ChatMessage, ChatMode, DebugProposal, ProjectPlan } from "@/app/lib/agentTypes";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import ChatMessages from "./ChatMessages";
 import InputBox from "./InputBox";
@@ -12,11 +12,21 @@ type ChatPanelProps = {
   mergedFiles: ExplorerFile[];
   isLoading: boolean;
   awaitingChanges: boolean;
+  chatMode: ChatMode;
+  onModeChange: (mode: ChatMode) => void;
+  inputDisabled: boolean;
   isOpen: boolean;
   collapsed: boolean;
   onClose: () => void;
   onToggleCollapse: () => void;
   onSubmit: (text: string) => void;
+  onPlanApprove?: () => void;
+  onPlanModify?: () => void;
+  onDebugApply?: (proposal: DebugProposal, messageId: string) => void;
+  appliedDebugMessageIds?: Set<string>;
+  showBuild?: boolean;
+  onBuild?: () => void;
+  buildDisabled?: boolean;
 };
 
 function PanelContent({
@@ -24,24 +34,61 @@ function PanelContent({
   phase,
   isLoading,
   awaitingChanges,
+  chatMode,
+  onModeChange,
+  inputDisabled,
   onSubmit,
+  onPlanApprove,
+  onPlanModify,
+  onDebugApply,
+  appliedDebugMessageIds,
+  showBuild,
+  onBuild,
+  buildDisabled,
 }: Pick<
   ChatPanelProps,
-  "messages" | "phase" | "isLoading" | "awaitingChanges" | "onSubmit"
+  | "messages"
+  | "phase"
+  | "isLoading"
+  | "awaitingChanges"
+  | "chatMode"
+  | "onModeChange"
+  | "inputDisabled"
+  | "onSubmit"
+  | "onPlanApprove"
+  | "onPlanModify"
+  | "onDebugApply"
+  | "appliedDebugMessageIds"
+  | "showBuild"
+  | "onBuild"
+  | "buildDisabled"
 >) {
   return (
     <>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <ChatMessages messages={messages} compact />
+        <ChatMessages
+          messages={messages}
+          compact
+          onPlanApprove={onPlanApprove}
+          onPlanModify={onPlanModify}
+          onDebugApply={onDebugApply}
+          appliedDebugMessageIds={appliedDebugMessageIds}
+          actionsDisabled={isLoading}
+        />
       </div>
 
       <InputBox
         variant="panel"
         onSubmit={onSubmit}
-        disabled={isLoading || phase === "complete" || (phase === "planning" && isLoading)}
+        disabled={inputDisabled}
         isLoading={isLoading}
         phase={phase}
         awaitingChanges={awaitingChanges}
+        chatMode={chatMode}
+        onModeChange={onModeChange}
+        showBuild={showBuild}
+        onBuild={onBuild}
+        buildDisabled={buildDisabled}
       />
     </>
   );
