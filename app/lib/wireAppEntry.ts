@@ -1,3 +1,5 @@
+import { importPathFromApp } from "./previewAssetStubs";
+
 const SECTION_ORDER = [
   "hero",
   "header",
@@ -39,30 +41,28 @@ function findAppPath(files: Record<string, string>): string | null {
 function findSectionComponents(
   files: Record<string, string>,
   appPath: string
-): { name: string; importPath: string }[] {
+): { name: string; path: string; importPath: string }[] {
   const appDir = appPath.substring(0, appPath.lastIndexOf("/")) || "";
-  const components: { name: string; importPath: string; sort: number }[] = [];
+  const components: { name: string; path: string; importPath: string; sort: number }[] = [];
 
   for (const path of Object.keys(files)) {
     if (path === appPath) continue;
     if (!/\.(jsx?|tsx?)$/i.test(path)) continue;
-    if (!path.includes("/src/") && !path.startsWith(appDir)) continue;
     if (/\/index\.(jsx?|tsx?)$/i.test(path)) continue;
     if (/\/App\.(jsx?|tsx?)$/i.test(path)) continue;
+
+    const inSrcTree =
+      path.startsWith("/src/") ||
+      (appDir && path.startsWith(`${appDir}/`));
+    if (!inSrcTree) continue;
 
     const name = path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "";
     if (!name || !/^[A-Z]/.test(name)) continue;
 
-    const importPath =
-      appDir && path.startsWith(`${appDir}/`)
-        ? `./${name}`
-        : path.startsWith("/src/")
-          ? `./${name}`
-          : `./${path.split("/").pop()?.replace(/\.[^.]+$/, "")}`;
-
     components.push({
       name,
-      importPath,
+      path,
+      importPath: importPathFromApp(appPath, path),
       sort: componentSortKey(name),
     });
   }
@@ -71,14 +71,13 @@ function findSectionComponents(
 
   const seen = new Set<string>();
   return components.filter((c) => {
-    if (seen.has(c.name)) return false;
-    seen.add(c.name);
+    if (seen.has(c.path)) return false;
+    seen.add(c.path);
     return true;
   });
 }
 
 export function synthesizeAppJs(
-  files: Record<string, string>,
   appPath: string,
   components: { name: string; importPath: string }[]
 ): string {
@@ -112,7 +111,7 @@ export function wireAppEntry(files: Record<string, string>): Record<string, stri
 
   if (!isStubAppContent(current)) return result;
 
-  result[appPath] = synthesizeAppJs(result, appPath, components);
+  result[appPath] = synthesizeAppJs(appPath, components);
   return result;
 }
 

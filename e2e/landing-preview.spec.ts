@@ -3,6 +3,7 @@ import { buildSandpackFiles } from "../app/lib/previewSandpack";
 import { landingPageProjectFiles } from "../app/e2e/fixtures/landingPage";
 import type { DbFile } from "../app/lib/agentTypes";
 import { wireAppEntry } from "../app/lib/wireAppEntry";
+import { importPathFromApp } from "../app/lib/previewAssetStubs";
 
 const portfolioStubFiles: DbFile[] = [
   {
@@ -20,9 +21,9 @@ const portfolioStubFiles: DbFile[] = [
   {
     id: "about",
     project_id: "p1",
-    file_path: "src/AboutSection.js",
-    file_name: "AboutSection.js",
-    content: `export default function AboutSection() { return <section><h2>About Omkar Bidari</h2></section>; }`,
+    file_path: "src/components/About.js",
+    file_name: "About.js",
+    content: `export default function About() { return <section><h2>About Omkar Bidari</h2></section>; }`,
     status: "done",
     score: 95,
     rounds_taken: 1,
@@ -32,9 +33,9 @@ const portfolioStubFiles: DbFile[] = [
   {
     id: "hero",
     project_id: "p1",
-    file_path: "src/HeroSection.js",
-    file_name: "HeroSection.js",
-    content: `export default function HeroSection() { return <section><h1>I'M OMKAR BIDARI</h1></section>; }`,
+    file_path: "src/components/Hero.js",
+    file_name: "Hero.js",
+    content: `import React from 'react';\nimport './Hero.css';\nexport default function Hero() { return <section><h1>I'M OMKAR BIDARI</h1></section>; }`,
     status: "done",
     score: 95,
     rounds_taken: 1,
@@ -44,23 +45,29 @@ const portfolioStubFiles: DbFile[] = [
 ];
 
 test.describe("RefineAI landing preview", () => {
+  test("importPathFromApp resolves src/components paths", () => {
+    expect(importPathFromApp("/src/App.js", "/src/components/Hero.js")).toBe(
+      "./components/Hero"
+    );
+  });
+
   test("wireAppEntry replaces Hello world stub with section imports", () => {
     const files: Record<string, string> = {
       "/src/App.js": portfolioStubFiles[0].content!,
-      "/src/AboutSection.js": portfolioStubFiles[1].content!,
-      "/src/HeroSection.js": portfolioStubFiles[2].content!,
+      "/src/components/About.js": portfolioStubFiles[1].content!,
+      "/src/components/Hero.js": portfolioStubFiles[2].content!,
     };
     const wired = wireAppEntry(files);
-    expect(wired["/src/App.js"]).toContain("AboutSection");
-    expect(wired["/src/App.js"]).toContain("HeroSection");
+    expect(wired["/src/App.js"]).toContain("./components/About");
+    expect(wired["/src/App.js"]).toContain("./components/Hero");
     expect(wired["/src/App.js"]).not.toMatch(/hello world/i);
   });
 
-  test("buildSandpackFiles wires portfolio stub for preview", () => {
+  test("buildSandpackFiles stubs missing Hero.css and wires components", () => {
     const bundle = buildSandpackFiles(portfolioStubFiles);
     expect(bundle).not.toBeNull();
-    expect(bundle!.files["/src/App.js"]).toContain("HeroSection");
-    expect(bundle!.files["/src/App.js"]).toContain("AboutSection");
+    expect(bundle!.files["/src/components/Hero.css"]).toBeTruthy();
+    expect(bundle!.files["/src/App.js"]).toContain("./components/Hero");
     expect(String(bundle!.files["/src/App.js"])).not.toMatch(/hello world/i);
   });
 
@@ -92,5 +99,6 @@ test.describe("RefineAI landing preview", () => {
     await expect(preview.getByText("Welcome")).toBeVisible();
 
     await expect(preview.getByText(/hello world/i)).toHaveCount(0);
+    await expect(preview.getByText(/ModuleNotFoundError/i)).toHaveCount(0);
   });
 });

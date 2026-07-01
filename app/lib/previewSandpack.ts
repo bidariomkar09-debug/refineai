@@ -1,4 +1,5 @@
 import type { DbFile } from "./agentTypes";
+import { ensureMissingStyleImports } from "./previewAssetStubs";
 import { wireAppEntry } from "./wireAppEntry";
 
 export type SandpackTemplate = "react" | "nextjs";
@@ -205,9 +206,11 @@ export function buildSandpackFiles(
   if (Object.keys(files).length === 0) return null;
 
   const wired = wireAppEntry(files);
-  const template = detectTemplate(wired);
-  const prepared =
-    template === "react" ? ensureReactScaffold(wired) : wired;
+  const withAssets = ensureMissingStyleImports(wired);
+  const template = detectTemplate(withAssets);
+  const scaffolded =
+    template === "react" ? ensureReactScaffold(withAssets) : withAssets;
+  const prepared = ensureMissingStyleImports(scaffolded);
   const stripped = stripSandpackTemplateDefaults(prepared);
   const entry = getSandpackEntry(prepared);
   const dependencies = collectSandpackDependencies(prepared);
