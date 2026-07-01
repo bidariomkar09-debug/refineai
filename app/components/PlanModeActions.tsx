@@ -12,22 +12,22 @@ export default function PlanModeActions({
   disabled,
 }: PlanModeActionsProps) {
   return (
-    <div className="mt-3 flex flex-wrap gap-2">
+    <div className="mt-3 flex flex-wrap items-center gap-2">
       <button
         type="button"
         onClick={onApprove}
         disabled={disabled}
-        className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500 disabled:opacity-50"
+        className="rounded-md bg-indigo-600 px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        Approve Plan
+        Build
       </button>
       <button
         type="button"
         onClick={onModify}
         disabled={disabled}
-        className="rounded-lg border border-amber-500/40 px-3 py-1.5 text-xs text-amber-300 hover:bg-amber-500/10 disabled:opacity-50"
+        className="rounded-md border border-surface-border px-3.5 py-1.5 text-xs text-gray-300 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
       >
-        Modify Plan
+        Edit plan
       </button>
     </div>
   );

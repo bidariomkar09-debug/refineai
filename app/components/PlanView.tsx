@@ -7,6 +7,7 @@ import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import { getPlanIntro, getRevisionIntro, getPlanSteps, getActiveStepLabel } from "@/app/lib/planPresentation";
 import { completionMessage, USER_MESSAGES } from "@/app/lib/userMessages";
 import PlanCard from "./PlanCard";
+import PlanDocument from "./PlanDocument";
 
 type PlanViewProps = {
   plan: ProjectPlan | null;
@@ -18,6 +19,7 @@ type PlanViewProps = {
   files: DbFile[];
   isLoading: boolean;
   planIntro: string | null;
+  planMarkdown?: string | null;
   onConfirm: () => void;
   onMakeChanges: () => void;
   onDownload: () => void;
@@ -68,6 +70,7 @@ export default function PlanView({
   files,
   isLoading,
   planIntro,
+  planMarkdown,
   onConfirm,
   onMakeChanges,
   onDownload,
@@ -136,11 +139,16 @@ export default function PlanView({
   return (
     <div className="h-full overflow-y-auto px-6 py-6">
       <div className="mx-auto max-w-3xl space-y-5">
-        {introText && (
+        {planMarkdown && phase === "awaiting_confirm" && !isBuilding && (
+          <PlanDocument markdown={planMarkdown} />
+        )}
+
+        {!planMarkdown && introText && (
           <IntroMessage text={introText} animate={phase !== "complete"} />
         )}
 
         {displayPlan &&
+          !planMarkdown &&
           (phase === "awaiting_confirm" ||
             phase === "planning" ||
             isBuilding ||
@@ -158,11 +166,24 @@ export default function PlanView({
             />
           )}
 
+        {displayPlan && planMarkdown && isBuilding && (
+          <PlanCard
+            plan={displayPlan}
+            liveFiles={mergedFiles}
+            variant="building"
+            onConfirm={onConfirm}
+            onMakeChanges={onMakeChanges}
+            confirmDisabled={confirmDisabled}
+          />
+        )}
+
         {isBuilding && (statusMessage || displayPlan) && (
           <BuildStatusBanner
             message={
               statusMessage ||
-              getActiveStepLabel(getPlanSteps(displayPlan!), mergedFiles) ||
+              (displayPlan
+                ? getActiveStepLabel(getPlanSteps(displayPlan), mergedFiles)
+                : null) ||
               USER_MESSAGES.building
             }
           />

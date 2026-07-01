@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { ChatMessage, DebugProposal } from "@/app/lib/agentTypes";
+import type { ChatMessage, DebugProposal, ProjectPlan } from "@/app/lib/agentTypes";
 import MessageBubble from "./MessageBubble";
 import ModeBadge from "./ModeBadge";
 import PlanModeActions from "./PlanModeActions";
 import PlanQuestionOptions from "./PlanQuestionOptions";
+import PlanChatCard from "./PlanChatCard";
 import DebugFixActions from "./DebugFixActions";
 
 type ChatMessagesProps = {
@@ -73,6 +74,12 @@ export default function ChatMessages({
                 disabled={actionsDisabled}
               />
             )}
+          {msg.metadata?.plan && msg.role === "assistant" && (
+            <PlanChatCard
+              plan={msg.metadata.plan as ProjectPlan}
+              compact={compact}
+            />
+          )}
           {msg.metadata?.showPlanActions && onPlanApprove && onPlanModify && (
             <PlanModeActions
               onApprove={onPlanApprove}

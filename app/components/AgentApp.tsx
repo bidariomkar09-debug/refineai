@@ -25,6 +25,7 @@ import {
   findPlannedFile,
   getFriendlyBuildMessage,
   getPlanIntro,
+  getPlanSummaryMessage,
   getRevisionIntro,
 } from "@/app/lib/planPresentation";
 import { completionMessage, fileCompleteMessage, USER_MESSAGES } from "@/app/lib/userMessages";
@@ -77,6 +78,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
   const [awaitingChanges, setAwaitingChanges] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [planIntro, setPlanIntro] = useState<string | null>(null);
+  const [planMarkdown, setPlanMarkdown] = useState<string | null>(null);
   const [chatMode, setChatMode] = useState<ChatMode>("agent");
   const [awaitingPlanChanges, setAwaitingPlanChanges] = useState(false);
   const [appliedDebugMessageIds, setAppliedDebugMessageIds] = useState<Set<string>>(
@@ -100,15 +102,14 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
     return phase === "complete" || (phase === "planning" && isLoading);
   }, [chatMode, isLoading, phase, projectId]);
 
-  const showBuild = useMemo(
-    () =>
-      chatMode === "agent" &&
-      showConfirm &&
-      phase === "awaiting_confirm" &&
-      !!plan &&
-      !isLoading,
-    [chatMode, showConfirm, phase, plan, isLoading]
-  );
+  const showBuild = useMemo(() => {
+    if (!plan || phase !== "awaiting_confirm" || isLoading) return false;
+    if (chatMode === "agent" && showConfirm) return true;
+    if (chatMode === "plan") {
+      return messages.some((m) => m.metadata?.showPlanActions);
+    }
+    return false;
+  }, [chatMode, showConfirm, phase, plan, isLoading, messages]);
 
   const [centerTab, setCenterTab] = useState<CenterTab>("plan");
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
@@ -677,8 +678,10 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           } else if (event.type === "plan_ready") {
             setProjectId(event.projectId);
             setPlan(event.data.plan);
-            setPlanIntro(event.data.markdown);
+            setPlanMarkdown(event.data.markdown);
+            setPlanIntro(null);
             setPhase("awaiting_confirm");
+            setShowConfirm(false);
             setAwaitingPlanChanges(false);
             setCenterTab("plan");
             setMessages((prev) => [
@@ -686,7 +689,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
               {
                 id: newId(),
                 role: "assistant",
-                content: event.data.markdown,
+                content: getPlanSummaryMessage(event.data.plan),
                 type: "chat",
                 mode: "plan",
                 metadata: {
@@ -1018,6 +1021,14 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
     await handleConfirm();
   }, [projectId, plan, refreshFiles, handleConfirm]);
 
+  const handleBuild = useCallback(() => {
+    if (chatMode === "plan") {
+      void handlePlanApprove();
+    } else {
+      void handleConfirm();
+    }
+  }, [chatMode, handlePlanApprove, handleConfirm]);
+
   const handleMakeChanges = useCallback(() => {
     setAwaitingChanges(true);
     setShowConfirm(false);
@@ -1151,6 +1162,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
             confirmDisabled={isLoading}
             isLoading={isLoading}
             planIntro={planIntro}
+            planMarkdown={planMarkdown}
             previewStatus={previewStatus}
             previewLastUpdated={previewLastUpdated}
             previewIframeKey={previewIframeKey}
@@ -1199,7 +1211,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           onDebugApply={handleDebugApply}
           appliedDebugMessageIds={appliedDebugMessageIds}
           showBuild={showBuild}
-          onBuild={handleConfirm}
+          onBuild={handleBuild}
           buildDisabled={isLoading}
         />
       </div>
@@ -1229,7 +1241,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           chatMode={chatMode}
           onModeChange={handleModeChange}
           showBuild={showBuild}
-          onBuild={handleConfirm}
+          onBuild={handleBuild}
           buildDisabled={isLoading}
         />
       </div>

@@ -28,6 +28,7 @@ type CenterPanelProps = {
   confirmDisabled: boolean;
   isLoading: boolean;
   planIntro: string | null;
+  planMarkdown?: string | null;
   previewStatus: PreviewStatus;
   previewLastUpdated: string | null;
   previewIframeKey: number;
@@ -85,6 +86,7 @@ export default function CenterPanel({
   confirmDisabled,
   isLoading,
   planIntro,
+  planMarkdown,
   previewStatus,
   previewLastUpdated,
   previewIframeKey,
@@ -124,6 +126,7 @@ export default function CenterPanel({
             files={files}
             isLoading={isLoading}
             planIntro={planIntro}
+            planMarkdown={planMarkdown}
             onConfirm={onConfirm}
             onMakeChanges={onMakeChanges}
             onDownload={onDownload}
