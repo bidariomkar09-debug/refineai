@@ -14,13 +14,8 @@
 # production
 /build
 
-# capacitor / android
-/android/.gradle/
-/android/app/build/
-/android/build/
-/android/local.properties
-
-RefineAI-v1.0.0-debug.apk
+# misc
+.DS_Store
 *.pem
 
 # debug

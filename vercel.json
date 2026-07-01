@@ -47,9 +47,5 @@
       "path": "/api/training-pipeline/process",
       "schedule": "0 11 * * *"
     }
-  ],
-  "github": {
-    "autoAlias": true,
-    "silent": true
-  }
+  ]
 }

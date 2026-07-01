@@ -1,6 +1,6 @@
 {
   "name": "refineai",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
@@ -10,13 +10,7 @@
     "start": "next start",
     "lint": "next lint",
     "sync": "bash scripts/sync-and-push.sh",
-    "sync:msg": "bash scripts/sync-and-push.sh",
-    "cap:assets": "node scripts/generate-android-assets.mjs && npx capacitor-assets generate --android",
-    "cap:sync": "npx cap sync android",
-    "cap:open": "npx cap open android",
-    "android:apk": "bash scripts/android-build.sh",
-    "android:build": "npm run android:apk",
-    "release": "npm version patch -m 'Release version %s' && git push origin main --follow-tags"
+    "sync:msg": "bash scripts/sync-and-push.sh"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
