@@ -275,9 +275,165 @@ export function derivePlanSteps(plan: ProjectPlan): PlanStep[] {
   return steps;
 }
 
+const STEP_STOP_WORDS = new Set([
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "with",
+  "for",
+  "to",
+  "in",
+  "on",
+  "your",
+  "create",
+  "build",
+  "add",
+  "implement",
+  "develop",
+  "style",
+  "set",
+  "up",
+  "section",
+  "component",
+  "test",
+  "deploy",
+]);
+
+function extractStepKeywords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STEP_STOP_WORDS.has(w));
+}
+
+function fileSearchText(file: PlannedFile): string {
+  return `${file.path} ${file.name} ${file.purpose}`.toLowerCase();
+}
+
+function scoreStepFileMatch(stepLabel: string, file: PlannedFile): number {
+  const keywords = extractStepKeywords(stepLabel);
+  if (keywords.length === 0) return 0;
+
+  const haystack = fileSearchText(file);
+  const pathBase =
+    file.path
+      .split("/")
+      .pop()
+      ?.replace(/\.[^.]+$/, "")
+      .toLowerCase() ?? "";
+
+  let score = 0;
+  for (const kw of keywords) {
+    if (haystack.includes(kw)) score += 1;
+    if (pathBase.includes(kw)) score += 2;
+  }
+  return score;
+}
+
+function isFoundationStep(label: string): boolean {
+  const lower = label.toLowerCase();
+  return (
+    lower.includes("tailwind") ||
+    lower.includes("react project") ||
+    lower.includes("foundation") ||
+    lower.includes("dependencies") ||
+    lower.includes("setup") ||
+    lower.includes("set up")
+  );
+}
+
+function isDeployStep(label: string): boolean {
+  const lower = label.toLowerCase();
+  return lower.includes("deploy") || lower.includes("responsiveness") || lower.includes("test");
+}
+
+/** Map AI-generated step labels to actual planned file paths for progress tracking. */
+export function linkPlanStepsToFiles(plan: ProjectPlan): PlanStep[] {
+  const baseSteps =
+    plan.steps && plan.steps.length > 0 ? plan.steps : derivePlanSteps(plan);
+  const files = plan.files ?? [];
+  const assigned = new Set<string>();
+
+  const takeFile = (file: PlannedFile): string => {
+    assigned.add(normalizePath(file.path));
+    return file.path;
+  };
+
+  return baseSteps.map((step) => {
+    const validPaths = (step.relatedPaths ?? []).filter((p) =>
+      files.some((f) => pathsMatch(f.path, p))
+    );
+    if (validPaths.length > 0) {
+      validPaths.forEach((p) => {
+        const match = files.find((f) => pathsMatch(f.path, p));
+        if (match) assigned.add(normalizePath(match.path));
+      });
+      return { ...step, relatedPaths: validPaths };
+    }
+
+    if (isFoundationStep(step.label)) {
+      const configFiles = files.filter(
+        (f) =>
+          !assigned.has(normalizePath(f.path)) &&
+          (isConfigFile(f.path) ||
+            f.path.toLowerCase().includes("tailwind") ||
+            f.path.toLowerCase().includes("index.css") ||
+            f.path.toLowerCase().includes("globals.css") ||
+            /(^|\/)app\.(jsx?|tsx?)$/i.test(f.path))
+      );
+      if (configFiles.length > 0) {
+        return { ...step, relatedPaths: configFiles.map(takeFile) };
+      }
+    }
+
+    if (isDeployStep(step.label)) {
+      const deployFiles = files.filter(
+        (f) =>
+          !assigned.has(normalizePath(f.path)) &&
+          (f.path.toLowerCase().includes("readme") ||
+            f.path.toLowerCase().includes("plan.md"))
+      );
+      if (deployFiles.length > 0) {
+        return { ...step, relatedPaths: deployFiles.map(takeFile) };
+      }
+    }
+
+    let best: { file: PlannedFile; score: number } | null = null;
+    for (const file of files) {
+      if (assigned.has(normalizePath(file.path))) continue;
+      const score = scoreStepFileMatch(step.label, file);
+      if (score > 0 && (!best || score > best.score)) {
+        best = { file, score };
+      }
+    }
+    if (best) {
+      return { ...step, relatedPaths: [takeFile(best.file)] };
+    }
+
+    const next = files.find((f) => !assigned.has(normalizePath(f.path)));
+    if (next) {
+      return { ...step, relatedPaths: [takeFile(next)] };
+    }
+
+    return step;
+  });
+}
+
+function pathsMatch(filePath: string, stepPath: string): boolean {
+  const f = normalizePath(filePath);
+  const s = normalizePath(stepPath);
+  if (f === s) return true;
+  if (f.endsWith(`/${s}`)) return true;
+  const fBase = f.split("/").pop() ?? f;
+  const sBase = s.split("/").pop() ?? s;
+  return fBase === sBase;
+}
+
 export function getPlanSteps(plan: ProjectPlan): PlanStep[] {
-  if (plan.steps && plan.steps.length > 0) return plan.steps;
-  return derivePlanSteps(plan);
+  return linkPlanStepsToFiles(plan);
 }
 
 export function getStepStatus(
@@ -299,7 +455,7 @@ export function getStepStatus(
   }
 
   const related = liveFiles.filter((f) =>
-    paths.includes(normalizePath(f.file_path))
+    paths.some((p) => pathsMatch(f.file_path, p))
   );
   if (related.length === 0) return "pending";
   if (related.some((f) => f.status === "building")) return "active";

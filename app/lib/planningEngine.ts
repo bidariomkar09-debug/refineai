@@ -1,7 +1,7 @@
 import type { ProjectPlan } from "./agentTypes";
 import { generateJSON } from "./agentAI";
 import { detectNiche, getStackForNiche } from "./techStacks";
-import { estimateBuildMinutes, derivePlanSteps } from "./planPresentation";
+import { estimateBuildMinutes, linkPlanStepsToFiles } from "./planPresentation";
 
 const PLAN_SYSTEM = `You are RefineAI, an expert software architect. Create a complete project plan from the user's idea.
 
@@ -71,9 +71,7 @@ function normalizePlan(data: ProjectPlan, niche: string, suggestedStack: ReturnT
           { path: "app/layout.tsx", name: "layout.tsx", purpose: "App layout", isApiRoute: false },
         ],
   };
-  if (!normalized.steps?.length) {
-    normalized.steps = derivePlanSteps(normalized);
-  }
+  normalized.steps = linkPlanStepsToFiles(normalized);
   normalized.estimatedFiles = normalized.files.length;
   return normalized;
 }

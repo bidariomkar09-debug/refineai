@@ -2,7 +2,7 @@ import type { ProjectPlan } from "./agentTypes";
 import { PLAN_MODE_SYSTEM_PROMPT } from "./chatModes";
 import { generateJSON, generateText } from "./agentAI";
 import { detectNiche, getStackForNiche } from "./techStacks";
-import { estimateBuildMinutes, derivePlanSteps } from "./planPresentation";
+import { estimateBuildMinutes, linkPlanStepsToFiles } from "./planPresentation";
 import { getMessages } from "./db";
 
 type PlanModeResult =
@@ -93,7 +93,7 @@ function normalizePlan(data: ProjectPlan, niche: string): ProjectPlan {
       data.apiRoutes ??
       files.filter((f) => f.isApiRoute).map((f) => `/${f.path.replace(/\\/g, "/")}`),
   };
-  if (!normalized.steps?.length) normalized.steps = derivePlanSteps(normalized);
+  normalized.steps = linkPlanStepsToFiles(normalized);
   return normalized;
 }
 
