@@ -65,10 +65,15 @@ export async function POST(request: NextRequest) {
           "assistant",
           result.content,
           "chat",
-          { planMode: true },
+          { planMode: true, planQuestionOptions: result.options },
           "plan"
         );
-        send({ type: "plan_question", content: result.content, projectId: projectId! });
+        send({
+          type: "plan_question",
+          content: result.content,
+          options: result.options,
+          projectId: projectId!,
+        });
         return;
       }
 

@@ -6,15 +6,60 @@ import { estimateBuildMinutes, derivePlanSteps } from "./planPresentation";
 import { getMessages } from "./db";
 
 type PlanModeResult =
-  | { type: "question"; content: string }
+  | { type: "question"; content: string; options: string[] }
   | { type: "plan"; markdown: string; plan: ProjectPlan };
 
 const CLARIFY_SYSTEM = `${PLAN_MODE_SYSTEM_PROMPT}
 
 You are in the clarifying phase. Ask ONE focused question to better understand requirements.
-Respond with JSON only: { "type": "question", "content": "your question here" }
+Respond with JSON only:
+{
+  "type": "question",
+  "content": "your question here",
+  "options": ["specific option 1", "specific option 2", "specific option 3"]
+}
+Rules for options:
+- Provide exactly 3 or 4 concrete, mutually distinct answer choices tailored to the project.
+- Each option should be a complete answer the user can pick with one click (not vague).
+- Do NOT include "other" or "something else" — the UI adds that automatically.
 If you already have enough information (3+ user answers in history), respond with:
 { "type": "ready", "content": "ready to plan" }`;
+
+function normalizeQuestionOptions(options: unknown, question: string): string[] {
+  const raw = Array.isArray(options)
+    ? options.filter((o): o is string => typeof o === "string" && o.trim().length > 0)
+    : [];
+  const unique = Array.from(new Set(raw.map((o) => o.trim()))).slice(0, 4);
+  if (unique.length >= 2) return unique;
+
+  const q = question.toLowerCase();
+  if (q.includes("animation") || q.includes("effect") || q.includes("hover")) {
+    return [
+      "Subtle fade-ins and slide transitions on scroll",
+      "Interactive hover states on buttons and cards",
+      "Page transitions and micro-interactions throughout",
+    ];
+  }
+  if (q.includes("color") || q.includes("theme") || q.includes("style")) {
+    return [
+      "Dark mode with accent highlights",
+      "Light, clean minimal design",
+      "Bold, colorful brand-focused palette",
+    ];
+  }
+  if (q.includes("feature") || q.includes("function")) {
+    return [
+      "Core MVP features only — keep it simple",
+      "Full feature set with all listed requirements",
+      "Phased approach — MVP first, extras later",
+    ];
+  }
+  return [
+    "Yes, include this in the project",
+    "No, skip this for now",
+    "Only a simplified version",
+  ];
+}
 
 const PLAN_JSON_SYSTEM = `You are a senior software architect. Create a complete project plan.
 Return JSON:
@@ -66,15 +111,23 @@ export async function runPlanModeStep(params: {
     const historyText = planMessages
       .map((m) => `${m.role}: ${m.content}`)
       .join("\n");
-    const { data } = await generateJSON<{ type: string; content: string }>(
+    const { data } = await generateJSON<{ type: string; content: string; options?: string[] }>(
       CLARIFY_SYSTEM,
       `History:\n${historyText}\n\nUser message:\n${params.message}\n\nUser answers so far: ${userAnswers}`
     );
     if (data.type === "question" && userAnswers < 2) {
-      return { type: "question", content: data.content };
+      return {
+        type: "question",
+        content: data.content,
+        options: normalizeQuestionOptions(data.options, data.content),
+      };
     }
     if (data.type === "question" && userAnswers < 3) {
-      return { type: "question", content: data.content };
+      return {
+        type: "question",
+        content: data.content,
+        options: normalizeQuestionOptions(data.options, data.content),
+      };
     }
   }
 

@@ -671,6 +671,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
                 content: event.content,
                 type: "chat",
                 mode: "plan",
+                metadata: { planQuestionOptions: event.options },
               },
             ]);
           } else if (event.type === "plan_ready") {
@@ -1169,6 +1170,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
               compact
               onPlanApprove={handlePlanApprove}
               onPlanModify={handlePlanModify}
+              onPlanAnswer={handlePlanMode}
               onDebugApply={handleDebugApply}
               appliedDebugMessageIds={appliedDebugMessageIds}
               actionsDisabled={isLoading}
@@ -1193,6 +1195,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           onSubmit={handleSubmit}
           onPlanApprove={handlePlanApprove}
           onPlanModify={handlePlanModify}
+          onPlanAnswer={handlePlanMode}
           onDebugApply={handleDebugApply}
           appliedDebugMessageIds={appliedDebugMessageIds}
           showBuild={showBuild}

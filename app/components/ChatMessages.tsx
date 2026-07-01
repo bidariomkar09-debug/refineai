@@ -5,6 +5,7 @@ import type { ChatMessage, DebugProposal } from "@/app/lib/agentTypes";
 import MessageBubble from "./MessageBubble";
 import ModeBadge from "./ModeBadge";
 import PlanModeActions from "./PlanModeActions";
+import PlanQuestionOptions from "./PlanQuestionOptions";
 import DebugFixActions from "./DebugFixActions";
 
 type ChatMessagesProps = {
@@ -12,6 +13,7 @@ type ChatMessagesProps = {
   compact?: boolean;
   onPlanApprove?: () => void;
   onPlanModify?: () => void;
+  onPlanAnswer?: (answer: string) => void;
   onDebugApply?: (proposal: DebugProposal, messageId: string) => void;
   appliedDebugMessageIds?: Set<string>;
   actionsDisabled?: boolean;
@@ -22,6 +24,7 @@ export default function ChatMessages({
   compact = false,
   onPlanApprove,
   onPlanModify,
+  onPlanAnswer,
   onDebugApply,
   appliedDebugMessageIds,
   actionsDisabled,
@@ -31,6 +34,15 @@ export default function ChatMessages({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
+
+  function isActivePlanQuestion(index: number): boolean {
+    const msg = messages[index];
+    if (!msg.metadata?.planQuestionOptions?.length) return false;
+    for (let i = index + 1; i < messages.length; i++) {
+      if (messages[i].role === "user" && messages[i].mode === "plan") return false;
+    }
+    return true;
+  }
 
   if (messages.length === 0) {
     return (
@@ -44,7 +56,7 @@ export default function ChatMessages({
 
   return (
     <div className={`space-y-1 ${compact ? "px-3 py-3" : "px-4 py-4 sm:px-6"}`}>
-      {messages.map((msg) => (
+      {messages.map((msg, index) => (
         <MessageBubble
           key={msg.id}
           role={msg.role}
@@ -52,6 +64,15 @@ export default function ChatMessages({
           compact={compact}
           badge={msg.role === "assistant" && msg.mode ? <ModeBadge mode={msg.mode} /> : undefined}
         >
+          {msg.metadata?.planQuestionOptions &&
+            isActivePlanQuestion(index) &&
+            onPlanAnswer && (
+              <PlanQuestionOptions
+                options={msg.metadata.planQuestionOptions}
+                onSelect={onPlanAnswer}
+                disabled={actionsDisabled}
+              />
+            )}
           {msg.metadata?.showPlanActions && onPlanApprove && onPlanModify && (
             <PlanModeActions
               onApprove={onPlanApprove}

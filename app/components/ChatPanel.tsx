@@ -22,6 +22,7 @@ type ChatPanelProps = {
   onSubmit: (text: string) => void;
   onPlanApprove?: () => void;
   onPlanModify?: () => void;
+  onPlanAnswer?: (answer: string) => void;
   onDebugApply?: (proposal: DebugProposal, messageId: string) => void;
   appliedDebugMessageIds?: Set<string>;
   showBuild?: boolean;
@@ -40,6 +41,7 @@ function PanelContent({
   onSubmit,
   onPlanApprove,
   onPlanModify,
+  onPlanAnswer,
   onDebugApply,
   appliedDebugMessageIds,
   showBuild,
@@ -57,6 +59,7 @@ function PanelContent({
   | "onSubmit"
   | "onPlanApprove"
   | "onPlanModify"
+  | "onPlanAnswer"
   | "onDebugApply"
   | "appliedDebugMessageIds"
   | "showBuild"
@@ -71,6 +74,7 @@ function PanelContent({
           compact
           onPlanApprove={onPlanApprove}
           onPlanModify={onPlanModify}
+          onPlanAnswer={onPlanAnswer}
           onDebugApply={onDebugApply}
           appliedDebugMessageIds={appliedDebugMessageIds}
           actionsDisabled={isLoading}

@@ -95,6 +95,7 @@ export type ChatMessage = {
   metadata?: {
     plan?: ProjectPlan;
     planMarkdown?: string;
+    planQuestionOptions?: string[];
     debugProposal?: DebugProposal;
     showPlanActions?: boolean;
     showDebugActions?: boolean;
@@ -177,7 +178,7 @@ export type SSEEvent =
   | { type: "summary"; data: ProjectPlan & { projectId: string } }
   | { type: "error"; message: string }
   | { type: "message"; content: string; mode?: ChatMode }
-  | { type: "plan_question"; content: string; projectId: string }
+  | { type: "plan_question"; content: string; options: string[]; projectId: string }
   | {
       type: "plan_ready";
       data: { plan: ProjectPlan; markdown: string };
