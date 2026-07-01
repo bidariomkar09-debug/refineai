@@ -118,7 +118,7 @@ export function getAverageScore(files: DbFile[]): number {
 
 export function getPlanSummaryMessage(plan: ProjectPlan): string {
   const steps = getPlanSteps(plan).length;
-  const files = plan.files.length;
+  const files = plan.files?.length ?? 0;
   return `Here's your plan for ${plan.name} — ${steps} steps, ${files} files. Review it in the Plan tab, then click Build when you're ready.`;
 }
 

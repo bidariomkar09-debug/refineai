@@ -28,6 +28,11 @@ import {
   getPlanSummaryMessage,
   getRevisionIntro,
 } from "@/app/lib/planPresentation";
+import {
+  normalizeLoadedPlan,
+  safePlanIntro,
+  safePlanSummary,
+} from "@/app/lib/normalizePlan";
 import { completionMessage, fileCompleteMessage, USER_MESSAGES } from "@/app/lib/userMessages";
 import type { PreviewLogLine, PreviewStatus } from "@/app/lib/previewTypes";
 import {
@@ -423,7 +428,7 @@ export default function AgentApp({
     try {
       const res = await fetch(`/api/projects?id=${project.id}`);
       const data = await res.json();
-      const loadedPlan = data.project?.plan as ProjectPlan;
+      const loadedPlan = normalizeLoadedPlan(data.project?.plan);
       const loadedFiles = (data.files ?? []) as DbFile[];
       const loadedMessages: ChatMessage[] = (data.messages ?? []).map(
         (m: {
@@ -436,7 +441,7 @@ export default function AgentApp({
         }) => {
           const mode = isValidChatMode(m.mode ?? "") ? (m.mode as ChatMode) : undefined;
           if (m.type === "chat" && mode === "plan") {
-            const planMeta = m.metadata?.plan as ProjectPlan | undefined;
+            const planMeta = normalizeLoadedPlan(m.metadata?.plan);
             const markdown = m.metadata?.planMarkdown as string | undefined;
             const awaitingBuild =
               project.status !== "complete" && project.status !== "building";
@@ -445,7 +450,7 @@ export default function AgentApp({
               role: m.role,
               content:
                 planMeta && (markdown || m.metadata?.showPlanActions)
-                  ? getPlanSummaryMessage(planMeta)
+                  ? safePlanSummary(planMeta)
                   : m.content,
               type: "chat" as const,
               mode: "plan",
@@ -468,14 +473,14 @@ export default function AgentApp({
             };
           }
           if (m.type === "plan") {
-            const metaPlan = m.metadata?.plan as ProjectPlan | undefined;
+            const metaPlan = normalizeLoadedPlan(m.metadata?.plan);
             return {
               id: m.id,
               role: m.role,
               content: metaPlan
-                ? getPlanIntro(metaPlan)
+                ? safePlanIntro(metaPlan)
                 : loadedPlan
-                  ? getPlanIntro(loadedPlan)
+                  ? safePlanIntro(loadedPlan)
                   : "Here's your project plan.",
               type: "chat" as const,
               mode: mode ?? "agent",
@@ -504,7 +509,11 @@ export default function AgentApp({
       setStoredActiveProjectId(project.id);
       setPlan(loadedPlan);
       setPlanMarkdown(planMdFromChat ?? planMdFromFile ?? null);
-      setPlanIntro(planMdFromChat || planMdFromFile ? null : getPlanIntro(loadedPlan));
+      setPlanIntro(
+        planMdFromChat || planMdFromFile || !loadedPlan
+          ? null
+          : safePlanIntro(loadedPlan)
+      );
       setFiles(loadedFiles);
       setMessages(loadedMessages);
       setSelectedFileId(null);

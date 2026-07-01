@@ -13,7 +13,7 @@ type PlanChatCardProps = {
 
 export default function PlanChatCard({ plan, compact }: PlanChatCardProps) {
   const steps = getPlanSteps(plan);
-  const minutes = estimateBuildMinutes(plan.files.length, plan.estimatedMinutes);
+  const minutes = estimateBuildMinutes(plan.files?.length ?? 0, plan.estimatedMinutes);
   const visibleSteps = steps.slice(0, 6);
   const remaining = steps.length - visibleSteps.length;
 
@@ -55,7 +55,7 @@ export default function PlanChatCard({ plan, compact }: PlanChatCardProps) {
         </ul>
 
         <p className="mt-3 text-[10px] text-gray-500">
-          {steps.length} steps · {plan.files.length} files
+          {steps.length} steps · {plan.files?.length ?? 0} files
         </p>
       </div>
     </div>
