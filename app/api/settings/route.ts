@@ -23,6 +23,7 @@ export async function PATCH(request: NextRequest) {
       "max_rounds",
       "temperature",
       "theme",
+      "timezone",
     ] as const;
     const partial: Record<string, unknown> = {};
     for (const key of allowed) {

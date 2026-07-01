@@ -15,7 +15,8 @@
     "cap:sync": "npx cap sync android",
     "cap:open": "npx cap open android",
     "android:apk": "bash scripts/android-build.sh",
-    "android:build": "npm run android:apk"
+    "android:build": "npm run android:apk",
+    "release": "npm version patch -m 'Release version %s' && git push origin main --follow-tags"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",

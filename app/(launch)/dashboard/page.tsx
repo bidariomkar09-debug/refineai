@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { getTimeGreeting, getWelcomeBackMessage } from "@/app/lib/personalization";
 
 type RecentProject = {
   id: string;
@@ -68,14 +69,31 @@ export default function LaunchScreen() {
   const [cloneUrl, setCloneUrl] = useState("");
   const [cloning, setCloning] = useState(false);
   const [cloneError, setCloneError] = useState<string | null>(null);
+  const [timezone, setTimezone] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    fetch("/api/projects?stats=true")
-      .then((r) => r.json())
-      .then((data) => setProjects(data.projects ?? []))
+    Promise.all([
+      fetch("/api/projects?stats=true"),
+      fetch("/api/settings"),
+    ])
+      .then(async ([projectsRes, settingsRes]) => {
+        if (projectsRes.ok) {
+          const data = await projectsRes.json();
+          setProjects(data.projects ?? []);
+        }
+        if (settingsRes.ok) {
+          const data = await settingsRes.json();
+          if (data.settings?.timezone) {
+            setTimezone(data.settings.timezone);
+          }
+        }
+      })
       .catch(() => setProjects([]))
       .finally(() => setLoading(false));
   }, []);
+
+  const timeGreeting = useMemo(() => getTimeGreeting(timezone), [timezone]);
+  const welcomeBack = getWelcomeBackMessage();
 
   const filteredProjects = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -115,6 +133,12 @@ export default function LaunchScreen() {
   return (
     <div className="relative flex min-h-dvh flex-col items-center justify-center bg-[#0a0a0a] px-5 py-12 motion-safe:animate-fade-in">
       <div className="w-full max-w-[500px]">
+        {/* Greetings */}
+        <div className="mb-6 text-center">
+          <p className="text-base font-medium text-indigo-400">{timeGreeting}</p>
+          <p className="mt-1 text-sm text-gray-500">{welcomeBack}</p>
+        </div>
+
         {/* Brand */}
         <div className="mb-10 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center">

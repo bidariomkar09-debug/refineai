@@ -269,12 +269,13 @@ export async function getCompletedFilesContext(
 
 const DEFAULT_SETTINGS: UserSettings = {
   id: "default",
-  account_name: "Developer",
+  account_name: "Omkar",
   selected_model: "gpt-4o",
   score_threshold: 95,
   max_rounds: 8,
   temperature: 0.7,
   theme: "dark",
+  timezone: process.env.PRIVATE_TIMEZONE ?? "America/Los_Angeles",
   updated_at: new Date().toISOString(),
 };
 
@@ -293,7 +294,12 @@ export async function getUserSettings(): Promise<UserSettings> {
     return DEFAULT_SETTINGS;
   }
   if (error) throw new DbError(error.message);
-  return data as UserSettings;
+  const row = data as UserSettings;
+  return {
+    ...DEFAULT_SETTINGS,
+    ...row,
+    timezone: row.timezone ?? DEFAULT_SETTINGS.timezone,
+  };
 }
 
 export async function upsertUserSettings(

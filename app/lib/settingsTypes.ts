@@ -6,6 +6,7 @@ export type UserSettings = {
   max_rounds: number;
   temperature: number;
   theme: "dark" | "light";
+  timezone: string;
   updated_at: string;
 };
 

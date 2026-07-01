@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import PWARegister from "@/app/components/PWARegister";
 import CapacitorInit from "@/app/components/CapacitorInit";
+import UpdateBanner from "@/app/components/UpdateBanner";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -46,6 +47,7 @@ export default function RootLayout({
         {children}
         <PWARegister />
         <CapacitorInit />
+        <UpdateBanner />
       </body>
     </html>
   );
