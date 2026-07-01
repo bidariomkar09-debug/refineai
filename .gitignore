@@ -14,6 +14,12 @@
 # production
 /build
 
+# capacitor / android
+/android/.gradle/
+/android/app/build/
+/android/build/
+/android/local.properties
+
 # misc
 .DS_Store
 *.pem

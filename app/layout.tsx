@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import PWARegister from "@/app/components/PWARegister";
+import CapacitorInit from "@/app/components/CapacitorInit";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -44,6 +45,7 @@ export default function RootLayout({
       <body className={inter.className}>
         {children}
         <PWARegister />
+        <CapacitorInit />
       </body>
     </html>
   );

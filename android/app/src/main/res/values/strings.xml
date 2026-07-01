@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">RefineAI</string>
+    <string name="title_activity_main">RefineAI</string>
+    <string name="package_name">com.refineai.app</string>
+    <string name="custom_url_scheme">com.refineai.app</string>
+</resources>
