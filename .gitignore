@@ -35,3 +35,8 @@ next-env.d.ts
 
 # preview projects (materialized for live preview)
 .preview-projects/
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
