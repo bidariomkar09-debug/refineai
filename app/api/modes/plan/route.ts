@@ -8,6 +8,7 @@ import {
 } from "@/app/lib/db";
 import { runPlanModeStep, revisePlanMode } from "@/app/lib/planModeEngine";
 import { createSSEStream, sseResponse } from "@/app/lib/streamClient";
+import { apiErrorMessage } from "@/app/lib/apiErrorMessage";
 import type { ProjectPlan } from "@/app/lib/agentTypes";
 
 export async function POST(request: NextRequest) {
@@ -18,6 +19,17 @@ export async function POST(request: NextRequest) {
 
   if (!message) {
     return new Response(JSON.stringify({ error: "message required" }), { status: 400 });
+  }
+
+  if (!process.env.OPENAI_API_KEY?.trim()) {
+    const stream = createSSEStream(async (send) => {
+      send({
+        type: "error",
+        message:
+          "OpenAI API key is not configured. Add OPENAI_API_KEY in Vercel → Settings → Environment Variables, then redeploy.",
+      });
+    });
+    return sseResponse(stream);
   }
 
   const stream = createSSEStream(async (send) => {
@@ -84,7 +96,7 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       send({
         type: "error",
-        message: err instanceof Error ? err.message : "Plan mode failed",
+        message: apiErrorMessage(err),
       });
     }
   });

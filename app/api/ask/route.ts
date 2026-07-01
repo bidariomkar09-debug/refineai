@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { answerQuestion } from "@/app/lib/askModeEngine";
 import { addMessage } from "@/app/lib/db";
 import { createSSEStream, sseResponse } from "@/app/lib/streamClient";
+import { apiErrorMessage } from "@/app/lib/apiErrorMessage";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       send({
         type: "error",
-        message: err instanceof Error ? err.message : "Ask failed",
+        message: apiErrorMessage(err),
       });
     }
   });

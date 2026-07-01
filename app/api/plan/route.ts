@@ -4,33 +4,14 @@ import {
   addMessage,
   createProject,
   createProjectFiles,
-  DbError,
   testConnection,
 } from "@/app/lib/db";
 import { createSSEStream, sseResponse } from "@/app/lib/streamClient";
 import { getPlanIntro } from "@/app/lib/planPresentation";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
-import { OpenAIClientError } from "@/app/lib/openaiClient";
-import { ProviderError } from "@/app/lib/modelProviders";
+import { apiErrorMessage } from "@/app/lib/apiErrorMessage";
 
 export const maxDuration = 120;
-
-function planErrorMessage(err: unknown): string {
-  if (err instanceof DbError) {
-    if (err.message.includes("does not exist")) {
-      return "Database setup incomplete. Run the Supabase migrations, then try again.";
-    }
-    return err.message;
-  }
-  if (err instanceof OpenAIClientError || err instanceof ProviderError) {
-    if (err.message.includes("OPENAI_API_KEY")) {
-      return "OpenAI API key is not configured. Add OPENAI_API_KEY in your Vercel project settings.";
-    }
-    return err.message;
-  }
-  if (err instanceof Error && err.message) return err.message;
-  return "Planning failed. Please try again.";
-}
 
 async function runPlan(idea: string) {
   await testConnection();
@@ -76,7 +57,7 @@ export async function POST(request: NextRequest) {
         const result = await runPlan(idea);
         send({ type: "plan", data: result.plan, projectId: result.projectId });
       } catch (retryErr) {
-        send({ type: "error", message: planErrorMessage(retryErr ?? firstErr) });
+        send({ type: "error", message: apiErrorMessage(retryErr ?? firstErr) });
       }
     }
   });

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { addMessage, getProjectFiles } from "@/app/lib/db";
 import { analyzeBug } from "@/app/lib/debugModeEngine";
 import { createSSEStream, sseResponse } from "@/app/lib/streamClient";
+import { apiErrorMessage } from "@/app/lib/apiErrorMessage";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
     } catch (err) {
       send({
         type: "error",
-        message: err instanceof Error ? err.message : "Debug failed",
+        message: apiErrorMessage(err),
       });
     }
   });
