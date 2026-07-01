@@ -102,7 +102,7 @@ export default function InputBox({
           </div>
         )}
 
-        <div className="overflow-hidden rounded-xl border border-surface-border bg-[#1a1a1a] shadow-lg shadow-black/20">
+        <div className="rounded-xl border border-surface-border bg-[#1a1a1a] shadow-lg shadow-black/20">
           <textarea
             value={value}
             onChange={handleInput}
@@ -128,9 +128,11 @@ export default function InputBox({
                 onClick={handleSubmit}
                 disabled={!canSend}
                 aria-label="Send message"
-                className={`touch-press flex items-center justify-center rounded-full bg-white/10 text-gray-300 transition hover:bg-white/15 hover:text-white disabled:cursor-not-allowed disabled:opacity-30 ${
-                  mobile ? "h-9 w-9" : "h-7 w-7"
-                }`}
+                className={`touch-press flex items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-30 ${
+                  canSend
+                    ? "bg-indigo-600 text-white hover:bg-indigo-500"
+                    : "bg-white/10 text-gray-300"
+                } ${mobile ? "h-9 w-9" : "h-7 w-7"}`}
               >
                 {isLoading ? (
                   <span className="inline-block h-3.5 w-3.5 motion-safe:animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />

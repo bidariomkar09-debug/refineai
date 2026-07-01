@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ChatMode } from "@/app/lib/agentTypes";
 import { CHAT_MODES, MODE_META, cycleMode } from "@/app/lib/chatModes";
 
@@ -68,11 +69,27 @@ function CheckIcon({ className }: { className?: string }) {
   );
 }
 
+type MenuPosition = { bottom: number; left: number; minWidth: number };
+
 export default function ModeSwitcher({ mode, onModeChange }: ModeSwitcherProps) {
   const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<MenuPosition | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const meta = MODE_META[mode];
   const ActiveIcon = ICONS[mode];
+
+  const updateMenuPosition = () => {
+    const btn = buttonRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    setMenuPos({
+      bottom: window.innerHeight - rect.top + 6,
+      left: rect.left,
+      minWidth: Math.max(rect.width, 168),
+    });
+  };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -87,17 +104,29 @@ export default function ModeSwitcher({ mode, onModeChange }: ModeSwitcherProps) 
 
   useEffect(() => {
     if (!open) return;
+    updateMenuPosition();
     const onPointerDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (
+        !rootRef.current?.contains(target) &&
+        !menuRef.current?.contains(target)
+      ) {
+        setOpen(false);
+      }
     };
     const onEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+    const onReposition = () => updateMenuPosition();
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onEscape);
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onEscape);
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
     };
   }, [open]);
 
@@ -106,17 +135,70 @@ export default function ModeSwitcher({ mode, onModeChange }: ModeSwitcherProps) 
     setOpen(false);
   };
 
+  const menu =
+    open && menuPos
+      ? createPortal(
+          <div
+            ref={menuRef}
+            role="listbox"
+            aria-label="Chat mode"
+            style={{
+              position: "fixed",
+              bottom: menuPos.bottom,
+              left: menuPos.left,
+              minWidth: menuPos.minWidth,
+            }}
+            className="z-[9999] overflow-hidden rounded-lg border border-white/10 bg-[#252526] py-1 shadow-2xl shadow-black/50"
+          >
+            {CHAT_MODES.map((id) => {
+              const item = MODE_META[id];
+              const Icon = ICONS[id];
+              const selected = mode === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  title={item.description}
+                  onClick={() => selectMode(id)}
+                  className={`flex w-full items-center gap-2.5 px-2.5 py-2 text-left text-sm transition ${
+                    selected ? "bg-white/5 text-white" : `text-gray-300 ${item.menuHover}`
+                  }`}
+                >
+                  <span
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${item.iconBg}`}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="flex-1 font-medium">{item.label}</span>
+                  {selected && (
+                    <CheckIcon className={`h-3.5 w-3.5 shrink-0 ${item.accentText}`} />
+                  )}
+                </button>
+              );
+            })}
+          </div>,
+          document.body
+        )
+      : null;
+
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-gray-400 transition hover:bg-white/5 hover:text-gray-200"
+        className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition ${meta.accentBorder} ${meta.accentBg} hover:brightness-110`}
       >
-        <ActiveIcon className="h-3.5 w-3.5 shrink-0 text-gray-300" />
-        <span className="font-medium text-gray-300">{meta.label}</span>
+        <span
+          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded ${meta.iconBg}`}
+        >
+          <ActiveIcon className="h-3.5 w-3.5" />
+        </span>
+        <span className={`font-medium ${meta.accentText}`}>{meta.label}</span>
         <svg
           className={`h-3 w-3 shrink-0 text-gray-500 transition-transform ${open ? "rotate-180" : ""}`}
           fill="none"
@@ -127,37 +209,7 @@ export default function ModeSwitcher({ mode, onModeChange }: ModeSwitcherProps) 
           <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
         </svg>
       </button>
-
-      {open && (
-        <div
-          role="listbox"
-          aria-label="Chat mode"
-          className="absolute bottom-full left-0 z-50 mb-1.5 min-w-[10.5rem] overflow-hidden rounded-lg border border-surface-border bg-[#1e1e1e] py-1 shadow-2xl"
-        >
-          {CHAT_MODES.map((id) => {
-            const item = MODE_META[id];
-            const Icon = ICONS[id];
-            const selected = mode === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                role="option"
-                aria-selected={selected}
-                title={item.description}
-                onClick={() => selectMode(id)}
-                className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition hover:bg-white/5 ${
-                  selected ? "text-white" : "text-gray-300"
-                }`}
-              >
-                <Icon className="h-4 w-4 shrink-0 text-gray-400" />
-                <span className="flex-1">{item.label}</span>
-                {selected && <CheckIcon className="h-3.5 w-3.5 shrink-0 text-indigo-400" />}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {menu}
     </div>
   );
 }

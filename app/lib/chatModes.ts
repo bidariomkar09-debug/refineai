@@ -1,6 +1,6 @@
 export type ChatMode = "agent" | "ask" | "plan" | "debug";
 
-export const CHAT_MODES: ChatMode[] = ["agent", "ask", "plan", "debug"];
+export const CHAT_MODES: ChatMode[] = ["agent", "plan", "debug", "ask"];
 
 export const MODE_STORAGE_KEY = "refineai-chat-mode";
 
@@ -9,6 +9,11 @@ export type ModeMeta = {
   label: string;
   description: string;
   badgeClass: string;
+  accentText: string;
+  accentBg: string;
+  accentBorder: string;
+  iconBg: string;
+  menuHover: string;
 };
 
 export const MODE_META: Record<ChatMode, ModeMeta> = {
@@ -16,25 +21,45 @@ export const MODE_META: Record<ChatMode, ModeMeta> = {
     id: "agent",
     label: "Agent",
     description: "Builds your full app autonomously",
-    badgeClass: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
-  },
-  ask: {
-    id: "ask",
-    label: "Ask",
-    description: "Answers questions without building or changing code",
-    badgeClass: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    badgeClass: "bg-violet-500/20 text-violet-300 border-violet-500/30",
+    accentText: "text-violet-400",
+    accentBg: "bg-violet-500/15",
+    accentBorder: "border-violet-500/40",
+    iconBg: "bg-violet-500/20 text-violet-300",
+    menuHover: "hover:bg-violet-500/10",
   },
   plan: {
     id: "plan",
     label: "Plan",
     description: "Creates a detailed plan before any code is written",
-    badgeClass: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    badgeClass: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+    accentText: "text-amber-400",
+    accentBg: "bg-amber-500/15",
+    accentBorder: "border-amber-500/40",
+    iconBg: "bg-amber-500/20 text-amber-300",
+    menuHover: "hover:bg-amber-500/10",
   },
   debug: {
     id: "debug",
     label: "Debug",
     description: "Finds and fixes bugs in your built project",
-    badgeClass: "bg-red-500/20 text-red-400 border-red-500/30",
+    badgeClass: "bg-rose-500/20 text-rose-300 border-rose-500/30",
+    accentText: "text-rose-400",
+    accentBg: "bg-rose-500/15",
+    accentBorder: "border-rose-500/40",
+    iconBg: "bg-rose-500/20 text-rose-300",
+    menuHover: "hover:bg-rose-500/10",
+  },
+  ask: {
+    id: "ask",
+    label: "Ask",
+    description: "Answers questions without building or changing code",
+    badgeClass: "bg-sky-500/20 text-sky-300 border-sky-500/30",
+    accentText: "text-sky-400",
+    accentBg: "bg-sky-500/15",
+    accentBorder: "border-sky-500/40",
+    iconBg: "bg-sky-500/20 text-sky-300",
+    menuHover: "hover:bg-sky-500/10",
   },
 };
 

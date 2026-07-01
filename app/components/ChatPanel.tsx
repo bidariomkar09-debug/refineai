@@ -125,7 +125,7 @@ export default function ChatPanel(props: ChatPanelProps) {
 
   return (
     <>
-      <aside className="hidden h-full w-[380px] shrink-0 flex-col overflow-hidden border-l border-surface-border bg-surface-raised lg:flex">
+      <aside className="hidden h-full w-[380px] shrink-0 flex-col border-l border-surface-border bg-surface-raised lg:flex">
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center justify-between border-b border-surface-border px-3 py-2">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
