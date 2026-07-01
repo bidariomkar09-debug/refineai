@@ -43,7 +43,13 @@ import CodeViewerModal from "./mobile/CodeViewerModal";
 import CodeViewer from "./CodeViewer";
 import SidebarNav from "./shell/SidebarNav";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useVisualViewport, useIsMobile, useIsTablet } from "@/app/lib/useVisualViewport";
+import {
+  clearStoredActiveProjectId,
+  getStoredActiveProjectId,
+  setStoredActiveProjectId,
+} from "@/app/lib/workspaceSession";
 
 let msgCounter = 0;
 function newId() {
@@ -51,7 +57,14 @@ function newId() {
   return `msg-${msgCounter}-${Date.now()}`;
 }
 
-export default function AgentApp({ initialProjectId }: { initialProjectId?: string | null } = {}) {
+export default function AgentApp({
+  initialProjectId,
+  startFresh = false,
+}: {
+  initialProjectId?: string | null;
+  startFresh?: boolean;
+} = {}) {
+  const router = useRouter();
   const [projects, setProjects] = useState<DbProject[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -347,6 +360,27 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
           metadata: Record<string, unknown>;
         }) => {
           const mode = isValidChatMode(m.mode ?? "") ? (m.mode as ChatMode) : undefined;
+          if (m.type === "chat" && mode === "plan") {
+            const planMeta = m.metadata?.plan as ProjectPlan | undefined;
+            const markdown = m.metadata?.planMarkdown as string | undefined;
+            const awaitingBuild =
+              project.status !== "complete" && project.status !== "building";
+            return {
+              id: m.id,
+              role: m.role,
+              content:
+                planMeta && (markdown || m.metadata?.showPlanActions)
+                  ? getPlanSummaryMessage(planMeta)
+                  : m.content,
+              type: "chat" as const,
+              mode: "plan",
+              metadata: {
+                ...m.metadata,
+                showPlanActions:
+                  m.metadata?.showPlanActions === true && awaitingBuild,
+              },
+            };
+          }
           if (m.type === "plan" && mode === "plan") {
             const markdown = m.metadata?.planMarkdown as string | undefined;
             return {
@@ -384,9 +418,18 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
         }
       );
 
+      const planMdFromChat = loadedMessages.find(
+        (m) => m.metadata?.planMarkdown
+      )?.metadata?.planMarkdown as string | undefined;
+      const planMdFromFile = loadedFiles.find((f) =>
+        f.file_path.toLowerCase().endsWith("plan.md")
+      )?.content;
+
       setProjectId(project.id);
+      setStoredActiveProjectId(project.id);
       setPlan(loadedPlan);
-      setPlanIntro(getPlanIntro(loadedPlan));
+      setPlanMarkdown(planMdFromChat ?? planMdFromFile ?? null);
+      setPlanIntro(planMdFromChat || planMdFromFile ? null : getPlanIntro(loadedPlan));
       setFiles(loadedFiles);
       setMessages(loadedMessages);
       setSelectedFileId(null);
@@ -467,6 +510,49 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
       setIsLoading(false);
     }
   }, [refreshFiles]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    setStoredActiveProjectId(projectId);
+    if (typeof window === "undefined") return;
+    const current = new URLSearchParams(window.location.search).get("projectId");
+    if (current !== projectId) {
+      router.replace(`/workspace?projectId=${encodeURIComponent(projectId)}`, {
+        scroll: false,
+      });
+    }
+  }, [projectId, router]);
+
+  useEffect(() => {
+    if (startFresh) {
+      clearStoredActiveProjectId();
+    }
+  }, [startFresh]);
+
+  useEffect(() => {
+    if (initialProjectId) return;
+    if (startFresh) return;
+
+    let cancelled = false;
+    (async () => {
+      const storedId = getStoredActiveProjectId();
+      if (!storedId) return;
+
+      try {
+        const res = await fetch(`/api/projects?id=${storedId}`);
+        const data = await res.json();
+        if (!cancelled && data.project) {
+          await loadProject(data.project);
+        }
+      } catch {
+        // silent
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialProjectId, startFresh, loadProject]);
 
   useEffect(() => {
     if (!initialProjectId) return;
@@ -1311,7 +1397,7 @@ export default function AgentApp({ initialProjectId }: { initialProjectId?: stri
         <SidebarNav activePath="/workspace" onNavigate={() => setNavDrawerOpen(false)} />
         <div className="mt-auto border-t border-white/10 p-4">
           <Link
-            href="/workspace"
+            href="/workspace?new=1"
             onClick={() => setNavDrawerOpen(false)}
             className="flex min-h-[44px] w-full items-center justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white"
           >

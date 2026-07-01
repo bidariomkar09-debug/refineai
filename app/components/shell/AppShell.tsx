@@ -40,7 +40,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </button>
         <SidebarNav activePath={pathname} collapsed onNavigate={() => setTabletExpanded(true)} />
         <Link
-          href="/workspace"
+          href="/workspace?new=1"
           className="touch-target mt-auto rounded-lg p-2 text-indigo-400 hover:bg-white/5"
           aria-label="New project"
         >
@@ -111,7 +111,7 @@ function NewProjectButton({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="mt-auto border-t border-white/10 p-4">
       <Link
-        href="/workspace"
+        href="/workspace?new=1"
         onClick={onNavigate}
         className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-500"
       >

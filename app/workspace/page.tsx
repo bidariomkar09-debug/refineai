@@ -13,7 +13,8 @@ const AgentApp = dynamic(() => import("@/app/components/AgentApp"), {
 function WorkspaceContent() {
   const searchParams = useSearchParams();
   const projectId = searchParams.get("projectId");
-  return <AgentApp initialProjectId={projectId} />;
+  const startFresh = searchParams.get("new") === "1";
+  return <AgentApp initialProjectId={projectId} startFresh={startFresh} />;
 }
 
 export default function WorkspacePage() {

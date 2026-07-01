@@ -91,7 +91,7 @@ export default function ProjectsPage() {
         crumbs={[{ label: "RefineAI", href: "/dashboard" }, { label: "Projects" }]}
         action={
           <Link
-            href="/workspace"
+            href="/workspace?new=1"
             className="block w-full min-h-[44px] rounded-lg bg-indigo-600 px-4 py-2 text-center text-sm font-medium text-white transition hover:bg-indigo-500 sm:w-auto"
           >
             New Project
@@ -144,7 +144,7 @@ export default function ProjectsPage() {
           action={
             projects.length === 0 ? (
               <Link
-                href="/workspace"
+                href="/workspace?new=1"
                 className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
               >
                 Start New Project

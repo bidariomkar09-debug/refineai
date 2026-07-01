@@ -156,7 +156,7 @@ export default function LaunchScreen() {
         {/* Action cards */}
         <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
           <ActionCard
-            href="/workspace"
+            href="/workspace?new=1"
             label="New Project"
             icon={
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
