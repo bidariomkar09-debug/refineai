@@ -18,6 +18,77 @@ function usesTailwind(files: Record<string, string>): boolean {
   );
 }
 
+function getSandpackEntry(files: Record<string, string>): string {
+  if (files["/index.js"]) return "/index.js";
+  if (files["/index.tsx"]) return "/index.tsx";
+  if (files["/src/index.js"]) return "/src/index.js";
+  if (files["/src/index.tsx"]) return "/src/index.tsx";
+  return "/index.js";
+}
+
+/** Sandpack merges template defaults; remove them so user files render instead of "Hello world". */
+function stripSandpackTemplateDefaults(
+  files: Record<string, string>
+): Record<string, string | false> {
+  const result: Record<string, string | false> = { ...files };
+  const paths = Object.keys(files);
+
+  const hasSrcApp = paths.some((p) => /\/src\/App\.(jsx?|tsx?)$/i.test(p));
+  const hasRootApp = paths.some((p) => /^\/App\.(jsx?|tsx?)$/i.test(p));
+
+  const templateDefaults = [
+    "/App.js",
+    "/App.tsx",
+    "/index.js",
+    "/index.tsx",
+    "/index.css",
+    "/styles.css",
+    "/styles.module.css",
+    "/public/index.html",
+  ];
+
+  for (const path of templateDefaults) {
+    if (files[path]) continue;
+    if (path.startsWith("/App") && (hasSrcApp || hasRootApp)) {
+      result[path] = false;
+    } else if (path === "/index.js" || path === "/index.tsx") {
+      if (files["/index.js"] || files["/index.tsx"] || files["/src/index.js"] || files["/src/index.tsx"]) {
+        result[path] = false;
+      }
+    } else if (path === "/public/index.html" && files["/public/index.html"]) {
+      result[path] = false;
+    } else if ((path === "/index.css" || path === "/styles.css") && !files[path]) {
+      const hasStyles = paths.some((p) => p.endsWith(".css"));
+      if (hasStyles) result[path] = false;
+    }
+  }
+
+  if (hasSrcApp) {
+    result["/App.js"] = false;
+    result["/App.tsx"] = false;
+  }
+
+  return result;
+}
+
+function collectSandpackDependencies(files: Record<string, string>): Record<string, string> {
+  const deps: Record<string, string> = {
+    react: "^18.2.0",
+    "react-dom": "^18.2.0",
+  };
+  const allContent = Object.values(files).join("\n");
+  if (/from ['"]react-icons/.test(allContent)) {
+    deps["react-icons"] = "^5.0.0";
+  }
+  if (/from ['"]lucide-react/.test(allContent)) {
+    deps["lucide-react"] = "^0.300.0";
+  }
+  if (/from ['"]framer-motion/.test(allContent)) {
+    deps["framer-motion"] = "^11.0.0";
+  }
+  return deps;
+}
+
 function detectTemplate(files: Record<string, string>): SandpackTemplate {
   const paths = Object.keys(files);
   if (
@@ -107,7 +178,12 @@ root.render(<App />);`;
 
 export function buildSandpackFiles(
   projectFiles: DbFile[]
-): { files: Record<string, string>; template: SandpackTemplate } | null {
+): {
+  files: Record<string, string | false>;
+  template: SandpackTemplate;
+  entry: string;
+  dependencies: Record<string, string>;
+} | null {
   const files: Record<string, string> = {};
 
   for (const file of projectFiles) {
@@ -123,8 +199,11 @@ export function buildSandpackFiles(
   const template = detectTemplate(files);
   const prepared =
     template === "react" ? ensureReactScaffold(files) : files;
+  const stripped = stripSandpackTemplateDefaults(prepared);
+  const entry = getSandpackEntry(prepared);
+  const dependencies = collectSandpackDependencies(prepared);
 
-  return { files: prepared, template };
+  return { files: stripped, template, entry, dependencies };
 }
 
 export function canUseSandpackPreview(): boolean {

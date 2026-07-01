@@ -56,7 +56,9 @@ Respond with valid JSON only:
 
 export const FILE_TASK_SYSTEM_PROMPT = `You are RefineAI, an expert software engineer. ${FILE_TASK_SCHEMA}
 Score honestly: 95+ means production-ready code with no bugs.
-Output ONLY the file content in "code" field — no markdown fences inside the code string.`;
+Output ONLY the file content in "code" field — no markdown fences inside the code string.
+Follow every detail in the Original user requirements section — exact names, copy, links, colors, and sections.
+For App.js / main entry files: import and render ALL section components (Hero, About, Skills, Projects, Contact, Footer, etc.) — never leave a placeholder like "Hello world".`;
 
 export function buildFileTaskUserPrompt(params: {
   task: FileTask;

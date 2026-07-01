@@ -143,8 +143,13 @@ export default function AgentApp({
 
   const [previewStatus, setPreviewStatus] = useState<PreviewStatus>("idle");
   const [previewMode, setPreviewMode] = useState<"localhost" | "sandpack">("localhost");
-  const [sandpackFiles, setSandpackFiles] = useState<Record<string, string> | null>(null);
+  const [sandpackFiles, setSandpackFiles] = useState<Record<string, string | false> | null>(null);
   const [sandpackTemplate, setSandpackTemplate] = useState<SandpackTemplate>("react");
+  const [sandpackEntry, setSandpackEntry] = useState("/index.js");
+  const [sandpackDependencies, setSandpackDependencies] = useState<Record<string, string>>({
+    react: "^18.2.0",
+    "react-dom": "^18.2.0",
+  });
   const [previewLogs, setPreviewLogs] = useState<PreviewLogLine[]>([]);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [previewViewport, setPreviewViewport] = useState<"desktop" | "mobile">("desktop");
@@ -233,6 +238,8 @@ export default function AgentApp({
       setPreviewMode("sandpack");
       setSandpackFiles(bundle.files);
       setSandpackTemplate(bundle.template);
+      setSandpackEntry(bundle.entry);
+      setSandpackDependencies(bundle.dependencies);
       setPreviewStatus("running");
       setPreviewLastUpdated(new Date().toISOString());
       setPreviewIframeKey((k) => k + 1);
@@ -1312,6 +1319,8 @@ export default function AgentApp({
             previewMode={previewMode}
             sandpackFiles={sandpackFiles}
             sandpackTemplate={sandpackTemplate}
+            sandpackEntry={sandpackEntry}
+            sandpackDependencies={sandpackDependencies}
             terminalOpen={terminalOpen}
             onToggleTerminal={() => setTerminalOpen((v) => !v)}
             onPreviewRefresh={handlePreviewRefresh}

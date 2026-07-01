@@ -36,8 +36,10 @@ type CenterPanelProps = {
   previewViewport: "desktop" | "mobile";
   previewLogs: PreviewLogLine[];
   previewMode?: "localhost" | "sandpack";
-  sandpackFiles?: Record<string, string> | null;
+  sandpackFiles?: Record<string, string | false> | null;
   sandpackTemplate?: SandpackTemplate;
+  sandpackEntry?: string;
+  sandpackDependencies?: Record<string, string>;
   terminalOpen: boolean;
   onToggleTerminal: () => void;
   onPreviewRefresh: () => void;
@@ -99,6 +101,8 @@ export default function CenterPanel({
   previewMode = "localhost",
   sandpackFiles,
   sandpackTemplate = "react",
+  sandpackEntry = "/index.js",
+  sandpackDependencies,
   terminalOpen,
   onToggleTerminal,
   onPreviewRefresh,
@@ -158,6 +162,8 @@ export default function CenterPanel({
             previewMode={previewMode}
             sandpackFiles={sandpackFiles}
             sandpackTemplate={sandpackTemplate}
+            sandpackEntry={sandpackEntry}
+            sandpackDependencies={sandpackDependencies}
             terminalOpen={terminalOpen}
             onToggleTerminal={onToggleTerminal}
             onRefresh={onPreviewRefresh}

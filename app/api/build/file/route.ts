@@ -64,11 +64,18 @@ export async function POST(request: NextRequest) {
     await updateFileStatus(fileId, "building");
 
     const completedFiles = await getCompletedFilesContext(projectId);
-    const projectContext = `Project: ${plan.name}\nDescription: ${plan.description}\nStack: ${JSON.stringify(plan.techStack)}`;
-
     const messages = await getMessages(projectId);
     const userIdea =
       messages.find((m) => m.role === "user")?.content ?? project.description;
+    const projectContext = [
+      `Project: ${plan.name}`,
+      `Description: ${plan.description}`,
+      `Stack: ${JSON.stringify(plan.techStack)}`,
+      "",
+      "Original user requirements (follow ALL details exactly — copy, links, sections, colors, layout):",
+      userIdea,
+    ].join("\n");
+
     const filePurpose = plannedFile?.purpose ?? file.file_name;
     const target = buildTrainingTarget(userIdea, file.file_path, filePurpose);
     const trainingRowIds: string[] = [];

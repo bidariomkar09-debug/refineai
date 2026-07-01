@@ -3,20 +3,25 @@
 import {
   SandpackPreview as SandpackFrame,
   SandpackProvider,
+  type SandpackFiles,
   type SandpackPredefinedTemplate,
 } from "@codesandbox/sandpack-react";
 import type { SandpackTemplate } from "@/app/lib/previewSandpack";
 
 type SandpackPreviewProps = {
-  files: Record<string, string>;
+  files: Record<string, string | false>;
   template: SandpackTemplate;
   viewport: "desktop" | "mobile";
+  entry?: string;
+  dependencies?: Record<string, string>;
 };
 
 export default function SandpackPreviewPanel({
   files,
   template,
   viewport,
+  entry = "/index.js",
+  dependencies,
 }: SandpackPreviewProps) {
   const sandpackTemplate: SandpackPredefinedTemplate =
     template === "nextjs" ? "nextjs" : "react";
@@ -29,8 +34,15 @@ export default function SandpackPreviewPanel({
     >
       <SandpackProvider
         template={sandpackTemplate}
-        files={files}
+        files={files as SandpackFiles}
         theme="dark"
+        customSetup={{
+          entry,
+          dependencies: dependencies ?? {
+            react: "^18.2.0",
+            "react-dom": "^18.2.0",
+          },
+        }}
         options={{
           externalResources: ["https://cdn.tailwindcss.com"],
           recompileMode: "immediate",

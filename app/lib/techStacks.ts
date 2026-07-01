@@ -15,7 +15,7 @@ export const NICHE_HINTS: Record<string, Partial<TechStack>> = {
   saas: DEFAULT_STACK,
   dashboard: DEFAULT_STACK,
   landing: {
-    frontend: "Next.js 14",
+    frontend: "React 18",
     backend: "None",
     database: "None",
     ai: "None",

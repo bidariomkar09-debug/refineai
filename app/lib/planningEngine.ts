@@ -34,13 +34,15 @@ Rules:
 - relatedPaths must reference actual file paths from the files array
 - List 6-12 files with full paths
 - Include README.md always
-- ALWAYS include these config files: package.json, tsconfig.json, next.config.mjs, tailwind.config.ts, postcss.config.mjs, app/layout.tsx, app/globals.css
+- description MUST preserve ALL user-specified content: exact copy/text, section names, links, contact info, colors, layout notes, and design requirements as a structured bullet list
+- If user asks for React + Tailwind (or portfolio/landing without Next.js): use Create React App style paths (src/App.js, src/index.js, src/components/*.js) — do NOT use Next.js app/ router or tsconfig/next.config files
+- If user asks for Next.js or full-stack app: use Next.js 14 App Router (app/page.tsx, app/layout.tsx, etc.) and include package.json, tsconfig.json, next.config.mjs, tailwind.config.ts, postcss.config.mjs, app/globals.css
 - Mark isApiRoute true for app/api/**/route.ts files
-- Use Next.js 14 App Router conventions
 - Cap at 12 files maximum
 - File purposes must be plain English for non-technical users
 - introMessage must be warm and conversational, not technical
-- estimatedMinutes should reflect file count (~15 seconds per file)`;
+- estimatedMinutes should reflect file count (~15 seconds per file)
+- For portfolio sites: plan one file per major section (Hero, About, Skills, Projects, Contact, Footer) plus App.js that imports and renders all sections`;
 
 const REVISION_SYSTEM = `${PLAN_SYSTEM}
 

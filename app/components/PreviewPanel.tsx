@@ -24,8 +24,10 @@ type PreviewPanelProps = {
   logs: PreviewLogLine[];
   terminalOpen: boolean;
   previewMode?: "localhost" | "sandpack";
-  sandpackFiles?: Record<string, string> | null;
+  sandpackFiles?: Record<string, string | false> | null;
   sandpackTemplate?: SandpackTemplate;
+  sandpackEntry?: string;
+  sandpackDependencies?: Record<string, string>;
   onToggleTerminal: () => void;
   onRefresh: () => void;
   onRetry: () => void;
@@ -75,6 +77,8 @@ export default function PreviewPanel({
   previewMode = "localhost",
   sandpackFiles,
   sandpackTemplate = "react",
+  sandpackEntry = "/index.js",
+  sandpackDependencies,
   onToggleTerminal,
   onRefresh,
   onRetry,
@@ -186,6 +190,8 @@ export default function PreviewPanel({
             key={iframeKey}
             files={sandpackFiles}
             template={sandpackTemplate}
+            entry={sandpackEntry}
+            dependencies={sandpackDependencies}
             viewport={localViewport}
           />
         )}
