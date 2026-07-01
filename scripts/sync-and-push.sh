@@ -11,10 +11,11 @@ echo "==> RefineAI sync-and-push"
 # Schema lives in supabase/schema.sql and supabase/migrations/
 # Apply manually in Supabase SQL Editor, or use: supabase db push
 if command -v supabase >/dev/null 2>&1; then
-  echo "==> Supabase CLI found — checking migrations..."
-  supabase db push --linked 2>/dev/null || echo "    (skipped: run 'supabase link' to enable auto-push)"
+  echo "==> Supabase migrations (Alembic equivalent)..."
+  supabase db push --linked 2>/dev/null || echo "    (skipped: run 'supabase login' && 'supabase link --project-ref YOUR_REF' to auto-push)"
 else
-  echo "==> DB: supabase/schema.sql is source of truth (no Supabase CLI linked)"
+  echo "==> Supabase migrations (Alembic equivalent)..."
+  npx supabase@latest db push --linked 2>/dev/null || echo "    (skipped: run 'supabase login' && 'supabase link --project-ref YOUR_REF' to auto-push)"
 fi
 
 # --- Build gate ---

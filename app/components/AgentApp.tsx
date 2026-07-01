@@ -30,6 +30,11 @@ import {
 } from "@/app/lib/planPresentation";
 import { completionMessage, fileCompleteMessage, USER_MESSAGES } from "@/app/lib/userMessages";
 import type { PreviewLogLine, PreviewStatus } from "@/app/lib/previewTypes";
+import {
+  buildSandpackFiles,
+  canUseSandpackPreview,
+  type SandpackTemplate,
+} from "@/app/lib/previewSandpack";
 import Sidebar, { FilesButton, SidebarContent } from "./Sidebar";
 import CenterPanel, { type CenterTab } from "./CenterPanel";
 import ChatPanel from "./ChatPanel";
@@ -137,6 +142,9 @@ export default function AgentApp({
   } | null>(null);
 
   const [previewStatus, setPreviewStatus] = useState<PreviewStatus>("idle");
+  const [previewMode, setPreviewMode] = useState<"localhost" | "sandpack">("localhost");
+  const [sandpackFiles, setSandpackFiles] = useState<Record<string, string> | null>(null);
+  const [sandpackTemplate, setSandpackTemplate] = useState<SandpackTemplate>("react");
   const [previewLogs, setPreviewLogs] = useState<PreviewLogLine[]>([]);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [previewViewport, setPreviewViewport] = useState<"desktop" | "mobile">("desktop");
@@ -213,6 +221,29 @@ export default function AgentApp({
     [currentCode]
   );
 
+  const startSandpackPreview = useCallback(
+    (projectFiles: DbFile[]) => {
+      const bundle = buildSandpackFiles(projectFiles);
+      if (!bundle) {
+        setPreviewStatus("error");
+        appendBuildMessage(USER_MESSAGES.previewError);
+        return false;
+      }
+
+      setPreviewMode("sandpack");
+      setSandpackFiles(bundle.files);
+      setSandpackTemplate(bundle.template);
+      setPreviewStatus("running");
+      setPreviewLastUpdated(new Date().toISOString());
+      setPreviewIframeKey((k) => k + 1);
+      wasPreviewRunningRef.current = true;
+      appendBuildMessage(USER_MESSAGES.previewReady);
+      setCenterTab("preview");
+      return true;
+    },
+    [appendBuildMessage]
+  );
+
   const handleRunApp = useCallback(async () => {
     if (!projectId) return;
     setIsPreviewStarting(true);
@@ -223,16 +254,31 @@ export default function AgentApp({
     appendBuildMessage(USER_MESSAGES.startingApp);
 
     try {
+      const projectFiles = await refreshFiles(projectId);
+
+      if (canUseSandpackPreview()) {
+        startSandpackPreview(projectFiles ?? files);
+        return;
+      }
+
       const response = await fetch("/api/preview/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId }),
       });
 
+      if (response.status === 403) {
+        startSandpackPreview(projectFiles ?? files);
+        return;
+      }
+
       if (!response.ok || !response.body) {
+        if (startSandpackPreview(projectFiles ?? files)) return;
         setPreviewStatus("error");
         return;
       }
+
+      setPreviewMode("localhost");
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -287,12 +333,14 @@ export default function AgentApp({
         }
       }
     } catch {
+      const fallbackFiles = files.filter((f) => f.status === "done");
+      if (startSandpackPreview(fallbackFiles)) return;
       setPreviewStatus("error");
       appendBuildMessage(USER_MESSAGES.previewError);
     } finally {
       setIsPreviewStarting(false);
     }
-  }, [projectId, appendBuildMessage]);
+  }, [projectId, files, refreshFiles, appendBuildMessage, startSandpackPreview]);
 
   const handlePreviewRefresh = useCallback(() => {
     setPreviewIframeKey((k) => k + 1);
@@ -305,6 +353,13 @@ export default function AgentApp({
 
   const syncPreviewIfRunning = useCallback(async () => {
     if (!projectId || !wasPreviewRunningRef.current) return;
+
+    if (previewMode === "sandpack" || canUseSandpackPreview()) {
+      const updated = await refreshFiles(projectId);
+      startSandpackPreview(updated ?? files);
+      return;
+    }
+
     try {
       const res = await fetch("/api/preview/sync", {
         method: "POST",
@@ -321,7 +376,7 @@ export default function AgentApp({
     } catch {
       // silent
     }
-  }, [projectId]);
+  }, [projectId, previewMode, files, refreshFiles, startSandpackPreview]);
 
   const handleDownload = useCallback(() => {
     const doneFiles = files.filter((f) => f.content);
@@ -1254,6 +1309,9 @@ export default function AgentApp({
             previewIframeKey={previewIframeKey}
             previewViewport={previewViewport}
             previewLogs={previewLogs}
+            previewMode={previewMode}
+            sandpackFiles={sandpackFiles}
+            sandpackTemplate={sandpackTemplate}
             terminalOpen={terminalOpen}
             onToggleTerminal={() => setTerminalOpen((v) => !v)}
             onPreviewRefresh={handlePreviewRefresh}

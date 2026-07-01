@@ -6,6 +6,7 @@ import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import type { PreviewLogLine, PreviewStatus } from "@/app/lib/previewTypes";
 import PlanView from "./PlanView";
 import PreviewPanel from "./PreviewPanel";
+import type { SandpackTemplate } from "@/app/lib/previewSandpack";
 
 export type CenterTab = "plan" | "preview";
 
@@ -34,6 +35,9 @@ type CenterPanelProps = {
   previewIframeKey: number;
   previewViewport: "desktop" | "mobile";
   previewLogs: PreviewLogLine[];
+  previewMode?: "localhost" | "sandpack";
+  sandpackFiles?: Record<string, string> | null;
+  sandpackTemplate?: SandpackTemplate;
   terminalOpen: boolean;
   onToggleTerminal: () => void;
   onPreviewRefresh: () => void;
@@ -92,6 +96,9 @@ export default function CenterPanel({
   previewIframeKey,
   previewViewport,
   previewLogs,
+  previewMode = "localhost",
+  sandpackFiles,
+  sandpackTemplate = "react",
   terminalOpen,
   onToggleTerminal,
   onPreviewRefresh,
@@ -148,6 +155,9 @@ export default function CenterPanel({
             iframeKey={previewIframeKey}
             viewport={previewViewport}
             logs={previewLogs}
+            previewMode={previewMode}
+            sandpackFiles={sandpackFiles}
+            sandpackTemplate={sandpackTemplate}
             terminalOpen={terminalOpen}
             onToggleTerminal={onToggleTerminal}
             onRefresh={onPreviewRefresh}

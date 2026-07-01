@@ -4,6 +4,17 @@ import { useState } from "react";
 import type { PreviewLogLine, PreviewStatus } from "@/app/lib/previewTypes";
 import { PREVIEW_URL } from "@/app/lib/previewTypes";
 import TerminalPanel from "./TerminalPanel";
+import dynamic from "next/dynamic";
+import type { SandpackTemplate } from "@/app/lib/previewSandpack";
+
+const SandpackPreviewPanel = dynamic(() => import("./SandpackPreview"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full items-center justify-center">
+      <div className="h-8 w-8 motion-safe:animate-spin rounded-full border-2 border-accent border-t-transparent" />
+    </div>
+  ),
+});
 
 type PreviewPanelProps = {
   status: PreviewStatus;
@@ -12,6 +23,9 @@ type PreviewPanelProps = {
   viewport: "desktop" | "mobile";
   logs: PreviewLogLine[];
   terminalOpen: boolean;
+  previewMode?: "localhost" | "sandpack";
+  sandpackFiles?: Record<string, string> | null;
+  sandpackTemplate?: SandpackTemplate;
   onToggleTerminal: () => void;
   onRefresh: () => void;
   onRetry: () => void;
@@ -36,10 +50,10 @@ function StatusDot({ status }: { status: PreviewStatus }) {
   return <span className="h-2 w-2 rounded-full bg-gray-500" />;
 }
 
-function statusLabel(status: PreviewStatus): string {
+function statusLabel(status: PreviewStatus, sandpack?: boolean): string {
   switch (status) {
     case "running":
-      return `Running on localhost:3001`;
+      return sandpack ? "Live preview" : `Running on localhost:3001`;
     case "installing":
       return "Installing dependencies...";
     case "starting":
@@ -58,6 +72,9 @@ export default function PreviewPanel({
   viewport,
   logs,
   terminalOpen,
+  previewMode = "localhost",
+  sandpackFiles,
+  sandpackTemplate = "react",
   onToggleTerminal,
   onRefresh,
   onRetry,
@@ -77,12 +94,14 @@ export default function PreviewPanel({
       })
     : null;
 
+  const isSandpack = previewMode === "sandpack";
+
   return (
     <div className="flex h-full flex-col">
       <div className="sticky top-0 z-10 flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-surface-border bg-surface-raised/95 px-4 py-2.5 backdrop-blur md:bg-surface-raised/80">
         <div className="flex items-center gap-2 text-xs">
           <StatusDot status={status} />
-          <span className="text-gray-300">{statusLabel(status)}</span>
+          <span className="text-gray-300">{statusLabel(status, isSandpack)}</span>
           {formattedTime && (
             <span className="hidden text-gray-600 sm:inline">· Updated {formattedTime}</span>
           )}
@@ -119,11 +138,11 @@ export default function PreviewPanel({
             Refresh
           </button>
           <a
-            href={PREVIEW_URL}
+            href={isSandpack ? undefined : PREVIEW_URL}
             target="_blank"
             rel="noopener noreferrer"
             className={`touch-target flex min-h-[44px] items-center rounded-lg border border-surface-border px-3 py-2 text-[10px] text-gray-300 hover:text-white sm:text-xs ${
-              status !== "running" ? "pointer-events-none opacity-40" : ""
+              status !== "running" || isSandpack ? "pointer-events-none opacity-40" : ""
             }`}
           >
             Open tab
@@ -135,7 +154,7 @@ export default function PreviewPanel({
         {(status === "installing" || status === "starting") && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-surface/90">
             <div className="mb-3 h-8 w-8 motion-safe:animate-spin rounded-full border-2 border-accent border-t-transparent" />
-            <p className="text-sm text-gray-300">{statusLabel(status)}</p>
+            <p className="text-sm text-gray-300">{statusLabel(status, isSandpack)}</p>
           </div>
         )}
 
@@ -162,7 +181,16 @@ export default function PreviewPanel({
           </div>
         )}
 
-        {status === "running" && (
+        {status === "running" && isSandpack && sandpackFiles && (
+          <SandpackPreviewPanel
+            key={iframeKey}
+            files={sandpackFiles}
+            template={sandpackTemplate}
+            viewport={localViewport}
+          />
+        )}
+
+        {status === "running" && !isSandpack && (
           <div
             className={`mx-auto h-full overflow-hidden rounded-lg border border-surface-border bg-white ${
               localViewport === "mobile" ? "max-w-[375px]" : "w-full"
