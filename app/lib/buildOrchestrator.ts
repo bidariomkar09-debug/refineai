@@ -196,6 +196,16 @@ export function startBuild(
 
     if (signal?.aborted) return;
 
+    try {
+      await fetch("/api/projects/wire-app", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+    } catch {
+      // preview wiring is best-effort
+    }
+
     await runQualityPass(projectId, callbacks, signal);
 
     if (signal?.aborted) return;

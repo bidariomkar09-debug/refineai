@@ -227,7 +227,20 @@ export default function AgentApp({
   );
 
   const startSandpackPreview = useCallback(
-    (projectFiles: DbFile[]) => {
+    async (projectFiles: DbFile[]) => {
+      if (projectId) {
+        try {
+          await fetch("/api/projects/wire-app", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId }),
+          });
+          projectFiles = (await refreshFiles(projectId)) ?? projectFiles;
+        } catch {
+          // best-effort wiring before preview
+        }
+      }
+
       const bundle = buildSandpackFiles(projectFiles);
       if (!bundle) {
         setPreviewStatus("error");
@@ -248,7 +261,7 @@ export default function AgentApp({
       setCenterTab("preview");
       return true;
     },
-    [appendBuildMessage]
+    [appendBuildMessage, projectId, refreshFiles]
   );
 
   const handleRunApp = useCallback(async () => {
@@ -264,7 +277,7 @@ export default function AgentApp({
       const projectFiles = await refreshFiles(projectId);
 
       if (canUseSandpackPreview()) {
-        startSandpackPreview(projectFiles ?? files);
+        await startSandpackPreview(projectFiles ?? files);
         return;
       }
 
@@ -275,12 +288,12 @@ export default function AgentApp({
       });
 
       if (response.status === 403) {
-        startSandpackPreview(projectFiles ?? files);
+        await startSandpackPreview(projectFiles ?? files);
         return;
       }
 
       if (!response.ok || !response.body) {
-        if (startSandpackPreview(projectFiles ?? files)) return;
+        if (await startSandpackPreview(projectFiles ?? files)) return;
         setPreviewStatus("error");
         return;
       }
@@ -341,7 +354,7 @@ export default function AgentApp({
       }
     } catch {
       const fallbackFiles = files.filter((f) => f.status === "done");
-      if (startSandpackPreview(fallbackFiles)) return;
+      if (await startSandpackPreview(fallbackFiles)) return;
       setPreviewStatus("error");
       appendBuildMessage(USER_MESSAGES.previewError);
     } finally {
@@ -363,7 +376,7 @@ export default function AgentApp({
 
     if (previewMode === "sandpack" || canUseSandpackPreview()) {
       const updated = await refreshFiles(projectId);
-      startSandpackPreview(updated ?? files);
+      await startSandpackPreview(updated ?? files);
       return;
     }
 

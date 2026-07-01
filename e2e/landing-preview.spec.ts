@@ -1,8 +1,69 @@
 import { test, expect } from "@playwright/test";
 import { buildSandpackFiles } from "../app/lib/previewSandpack";
 import { landingPageProjectFiles } from "../app/e2e/fixtures/landingPage";
+import type { DbFile } from "../app/lib/agentTypes";
+import { wireAppEntry } from "../app/lib/wireAppEntry";
+
+const portfolioStubFiles: DbFile[] = [
+  {
+    id: "stub-app",
+    project_id: "p1",
+    file_path: "src/App.js",
+    file_name: "App.js",
+    content: `export default function App() { return <h1>Hello world</h1>; }`,
+    status: "done",
+    score: 35,
+    rounds_taken: 1,
+    sort_order: 0,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "about",
+    project_id: "p1",
+    file_path: "src/AboutSection.js",
+    file_name: "AboutSection.js",
+    content: `export default function AboutSection() { return <section><h2>About Omkar Bidari</h2></section>; }`,
+    status: "done",
+    score: 95,
+    rounds_taken: 1,
+    sort_order: 1,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: "hero",
+    project_id: "p1",
+    file_path: "src/HeroSection.js",
+    file_name: "HeroSection.js",
+    content: `export default function HeroSection() { return <section><h1>I'M OMKAR BIDARI</h1></section>; }`,
+    status: "done",
+    score: 95,
+    rounds_taken: 1,
+    sort_order: 2,
+    created_at: new Date().toISOString(),
+  },
+];
 
 test.describe("RefineAI landing preview", () => {
+  test("wireAppEntry replaces Hello world stub with section imports", () => {
+    const files: Record<string, string> = {
+      "/src/App.js": portfolioStubFiles[0].content!,
+      "/src/AboutSection.js": portfolioStubFiles[1].content!,
+      "/src/HeroSection.js": portfolioStubFiles[2].content!,
+    };
+    const wired = wireAppEntry(files);
+    expect(wired["/src/App.js"]).toContain("AboutSection");
+    expect(wired["/src/App.js"]).toContain("HeroSection");
+    expect(wired["/src/App.js"]).not.toMatch(/hello world/i);
+  });
+
+  test("buildSandpackFiles wires portfolio stub for preview", () => {
+    const bundle = buildSandpackFiles(portfolioStubFiles);
+    expect(bundle).not.toBeNull();
+    expect(bundle!.files["/src/App.js"]).toContain("HeroSection");
+    expect(bundle!.files["/src/App.js"]).toContain("AboutSection");
+    expect(String(bundle!.files["/src/App.js"])).not.toMatch(/hello world/i);
+  });
+
   test("buildSandpackFiles wires src/App.js and strips template Hello world", () => {
     const bundle = buildSandpackFiles(landingPageProjectFiles);
     expect(bundle).not.toBeNull();

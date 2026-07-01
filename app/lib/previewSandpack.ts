@@ -1,4 +1,5 @@
 import type { DbFile } from "./agentTypes";
+import { wireAppEntry } from "./wireAppEntry";
 
 export type SandpackTemplate = "react" | "nextjs";
 
@@ -66,6 +67,13 @@ function stripSandpackTemplateDefaults(
   if (hasSrcApp) {
     result["/App.js"] = false;
     result["/App.tsx"] = false;
+  }
+
+  // Always hide template defaults when we supply our own entry + html
+  if (files["/index.js"] || files["/public/index.html"]) {
+    for (const path of ["/App.js", "/App.tsx", "/index.js", "/index.tsx", "/styles.css"]) {
+      if (!files[path]) result[path] = false;
+    }
   }
 
   return result;
@@ -196,9 +204,10 @@ export function buildSandpackFiles(
 
   if (Object.keys(files).length === 0) return null;
 
-  const template = detectTemplate(files);
+  const wired = wireAppEntry(files);
+  const template = detectTemplate(wired);
   const prepared =
-    template === "react" ? ensureReactScaffold(files) : files;
+    template === "react" ? ensureReactScaffold(wired) : wired;
   const stripped = stripSandpackTemplateDefaults(prepared);
   const entry = getSandpackEntry(prepared);
   const dependencies = collectSandpackDependencies(prepared);
