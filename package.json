@@ -14,7 +14,8 @@
     "cap:assets": "node scripts/generate-android-assets.mjs && npx capacitor-assets generate --android",
     "cap:sync": "npx cap sync android",
     "cap:open": "npx cap open android",
-    "android:apk": "npm run cap:sync && cd android && ./gradlew assembleDebug"
+    "android:apk": "bash scripts/android-build.sh",
+    "android:build": "npm run android:apk"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
