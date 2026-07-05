@@ -33,6 +33,9 @@ const config: Config = {
         "fade-in": "fade-in 0.4s ease-out forwards",
         "slide-up": "slide-up 0.35s cubic-bezier(0.32, 0.72, 0, 1) forwards",
         "slide-in-right": "slide-in-right 0.35s cubic-bezier(0.32, 0.72, 0, 1) forwards",
+        "loop-back": "loop-back 1.2s ease-in-out infinite",
+        "check-pop": "check-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards",
+        "step-pulse": "step-pulse 1.5s ease-in-out infinite",
       },
       keyframes: {
         "fade-in": {
@@ -46,6 +49,19 @@ const config: Config = {
         "slide-in-right": {
           from: { transform: "translateX(-100%)" },
           to: { transform: "translateX(0)" },
+        },
+        "loop-back": {
+          "0%, 100%": { opacity: "0.4", transform: "translateX(0)" },
+          "50%": { opacity: "1", transform: "translateX(-4px)" },
+        },
+        "check-pop": {
+          "0%": { opacity: "0", transform: "scale(0.5)" },
+          "70%": { transform: "scale(1.1)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
+        "step-pulse": {
+          "0%, 100%": { boxShadow: "0 0 0 0 rgba(99, 102, 241, 0.4)" },
+          "50%": { boxShadow: "0 0 0 8px rgba(99, 102, 241, 0)" },
         },
       },
     },

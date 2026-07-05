@@ -28,6 +28,7 @@ type ChatPanelProps = {
   showBuild?: boolean;
   onBuild?: () => void;
   buildDisabled?: boolean;
+  onComposerActivity?: (active: boolean) => void;
 };
 
 function PanelContent({
@@ -47,6 +48,7 @@ function PanelContent({
   showBuild,
   onBuild,
   buildDisabled,
+  onComposerActivity,
 }: Pick<
   ChatPanelProps,
   | "messages"
@@ -65,6 +67,7 @@ function PanelContent({
   | "showBuild"
   | "onBuild"
   | "buildDisabled"
+  | "onComposerActivity"
 >) {
   return (
     <>
@@ -93,6 +96,7 @@ function PanelContent({
         showBuild={showBuild}
         onBuild={onBuild}
         buildDisabled={buildDisabled}
+        onComposerActivity={onComposerActivity}
       />
     </>
   );

@@ -7,6 +7,8 @@ import type { PreviewLogLine, PreviewStatus } from "@/app/lib/previewTypes";
 import PlanView from "./PlanView";
 import PreviewPanel from "./PreviewPanel";
 import type { SandpackTemplate } from "@/app/lib/previewSandpack";
+import type { LoopEngineeringSnapshot } from "@/app/lib/loopEngineeringTypes";
+import LoopEngineeringPanel from "./loop/LoopEngineeringPanel";
 
 export type CenterTab = "plan" | "preview";
 
@@ -46,6 +48,11 @@ type CenterPanelProps = {
   onPreviewRetry: () => void;
   onPreviewViewportChange: (v: "desktop" | "mobile") => void;
   chatMode?: ChatMode;
+  loopSnapshot: LoopEngineeringSnapshot;
+  goalMetScore: number;
+  reviewAccepted: boolean;
+  onAcceptAll: () => void;
+  onLoopRequestChanges: () => void;
 };
 
 function TabButton({
@@ -109,9 +116,16 @@ export default function CenterPanel({
   onPreviewRetry,
   onPreviewViewportChange,
   chatMode = "agent",
+  loopSnapshot,
+  goalMetScore,
+  reviewAccepted,
+  onAcceptAll,
+  onLoopRequestChanges,
 }: CenterPanelProps) {
   return (
     <div className="flex min-w-0 flex-1 flex-col">
+      <LoopEngineeringPanel snapshot={loopSnapshot} goalMetScore={goalMetScore} />
+
       <div className="flex shrink-0 overflow-x-auto border-b border-surface-border bg-surface-raised/50 px-2">
         <TabButton active={centerTab === "plan"} onClick={() => onTabChange("plan")}>
           Plan
@@ -145,6 +159,10 @@ export default function CenterPanel({
             isRunDisabled={isRunDisabled}
             isPreviewRunning={isPreviewRunning}
             confirmDisabled={confirmDisabled}
+            reviewAccepted={reviewAccepted}
+            loopSnapshot={loopSnapshot}
+            onAcceptAll={onAcceptAll}
+            onLoopRequestChanges={onLoopRequestChanges}
           />
         </div>
 

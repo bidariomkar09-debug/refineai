@@ -17,6 +17,7 @@ type InputBoxProps = {
   showBuild?: boolean;
   onBuild?: () => void;
   buildDisabled?: boolean;
+  onComposerActivity?: (active: boolean) => void;
 };
 
 function getPlaceholder(
@@ -54,16 +55,25 @@ export default function InputBox({
   showBuild = false,
   onBuild,
   buildDisabled = false,
+  onComposerActivity,
 }: InputBoxProps) {
   const [value, setValue] = useState("");
   const isPanel = variant === "panel";
+
+  const notifyComposer = useCallback(
+    (nextValue: string, focused: boolean) => {
+      onComposerActivity?.(focused || nextValue.trim().length > 0);
+    },
+    [onComposerActivity]
+  );
 
   const handleSubmit = useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed || disabled) return;
     onSubmit(trimmed);
     setValue("");
-  }, [value, disabled, onSubmit]);
+    notifyComposer("", false);
+  }, [value, disabled, onSubmit, notifyComposer]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -73,7 +83,9 @@ export default function InputBox({
   };
 
   const handleInput = (e: ChangeEvent<HTMLTextAreaElement>) => {
-    setValue(e.target.value);
+    const next = e.target.value;
+    setValue(next);
+    notifyComposer(next, true);
     if (mobile) {
       e.target.style.height = "auto";
       e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
@@ -106,6 +118,8 @@ export default function InputBox({
           <textarea
             value={value}
             onChange={handleInput}
+            onFocus={() => notifyComposer(value, true)}
+            onBlur={() => notifyComposer(value, false)}
             onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder={getPlaceholder(phase, awaitingChanges, chatMode)}

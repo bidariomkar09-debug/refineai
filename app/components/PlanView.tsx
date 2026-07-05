@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
 import type { BuildPhase, DbFile, ProjectPlan } from "@/app/lib/agentTypes";
-import { meetsQualityThreshold } from "@/app/lib/agentTypes";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import { getPlanIntro, getRevisionIntro, getPlanSteps, getActiveStepLabel } from "@/app/lib/planPresentation";
-import { completionMessage, USER_MESSAGES } from "@/app/lib/userMessages";
+import { USER_MESSAGES } from "@/app/lib/userMessages";
 import PlanCard from "./PlanCard";
 import PlanDocument from "./PlanDocument";
+import HumanReviewPanel from "./loop/HumanReviewPanel";
+import LoopEngineeringSummary from "./loop/LoopEngineeringSummary";
+import type { LoopEngineeringSnapshot } from "@/app/lib/loopEngineeringTypes";
 
 type PlanViewProps = {
   plan: ProjectPlan | null;
@@ -27,6 +28,10 @@ type PlanViewProps = {
   isRunDisabled: boolean;
   isPreviewRunning: boolean;
   confirmDisabled: boolean;
+  reviewAccepted: boolean;
+  loopSnapshot: LoopEngineeringSnapshot;
+  onAcceptAll: () => void;
+  onLoopRequestChanges: () => void;
 };
 
 function IntroMessage({ text, animate }: { text: string; animate?: boolean }) {
@@ -78,8 +83,11 @@ export default function PlanView({
   isRunDisabled,
   isPreviewRunning,
   confirmDisabled,
+  reviewAccepted,
+  loopSnapshot,
+  onAcceptAll,
+  onLoopRequestChanges,
 }: PlanViewProps) {
-  const [showDetails, setShowDetails] = useState(false);
   const isBuilding = phase === "building" || phase === "testing";
   const displayPlan = summaryPlan ?? plan;
 
@@ -127,14 +135,6 @@ export default function PlanView({
         ? getRevisionIntro(displayPlan)
         : getPlanIntro(displayPlan)
       : null);
-
-  const doneFiles = files.filter((f) => f.status === "done");
-  const avgScore =
-    doneFiles.length > 0
-      ? Math.round(
-          doneFiles.reduce((sum, f) => sum + f.score, 0) / doneFiles.length
-        )
-      : 0;
 
   return (
     <div className="h-full overflow-y-auto px-6 py-6">
@@ -189,66 +189,27 @@ export default function PlanView({
           />
         )}
 
-        {phase === "complete" && displayPlan && (
-          <div className="space-y-4 rounded-xl border border-accent-green/30 bg-accent-green/5 p-5 motion-safe:animate-fade-in">
-            <p className="text-sm leading-relaxed text-gray-200">
-              {completionMessage(displayPlan.name, doneFiles.length, avgScore)}
-            </p>
+        {phase === "complete" && displayPlan && !reviewAccepted && (
+          <HumanReviewPanel
+            plan={displayPlan}
+            files={files}
+            onAcceptAll={onAcceptAll}
+            onRequestChanges={onLoopRequestChanges}
+          />
+        )}
 
-            <p className="text-sm text-gray-400">
-              {displayPlan.setupInstructions ??
-                "Click Run App below to preview your project live."}
-            </p>
-
-            <button
-              type="button"
-              onClick={onRunApp}
-              disabled={isRunDisabled || isPreviewRunning}
-              className="w-full rounded-xl bg-accent-green py-3 text-sm font-semibold text-white transition hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isPreviewRunning ? "Starting app..." : "Run App"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowDetails((v) => !v)}
-              className="text-xs text-gray-500 underline-offset-2 hover:text-gray-300 hover:underline"
-            >
-              {showDetails ? "Hide details" : "View details"}
-            </button>
-
-            {showDetails && doneFiles.length > 0 && (
-              <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg bg-black/20 p-2">
-                {doneFiles.map((file) => (
-                  <li
-                    key={file.id}
-                    className="flex items-center justify-between gap-2 text-xs"
-                  >
-                    <span className="min-w-0 truncate font-mono text-gray-400">
-                      {file.file_path}
-                    </span>
-                    <span
-                      className={`shrink-0 font-semibold tabular-nums ${
-                        meetsQualityThreshold(file.score)
-                          ? "text-accent-green"
-                          : "text-amber-400"
-                      }`}
-                    >
-                      {file.score}%
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <button
-              type="button"
-              onClick={onDownload}
-              className="w-full rounded-xl border border-accent-green/40 bg-accent-green/10 py-2.5 text-sm font-medium text-accent-green transition hover:bg-accent-green/20"
-            >
-              Download All Files
-            </button>
-          </div>
+        {phase === "complete" && displayPlan && reviewAccepted && (
+          <LoopEngineeringSummary
+            snapshot={loopSnapshot}
+            onRunApp={onRunApp}
+            onDownload={onDownload}
+            isRunDisabled={isRunDisabled}
+            isPreviewRunning={isPreviewRunning}
+            setupInstructions={
+              displayPlan.setupInstructions ??
+              "Click Run App below to preview your project live."
+            }
+          />
         )}
       </div>
     </div>

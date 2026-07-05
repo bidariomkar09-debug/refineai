@@ -40,6 +40,12 @@ import {
   canUseSandpackPreview,
   type SandpackTemplate,
 } from "@/app/lib/previewSandpack";
+import {
+  deriveLoopEngineeringState,
+  recordLoopIterationFromRound,
+  resetLoopEngineeringState,
+} from "@/app/lib/loopEngineeringState";
+import type { LoopIteration } from "@/app/lib/loopEngineeringTypes";
 import Sidebar, { FilesButton, SidebarContent } from "./Sidebar";
 import CenterPanel, { type CenterTab } from "./CenterPanel";
 import ChatPanel from "./ChatPanel";
@@ -163,9 +169,18 @@ export default function AgentApp({
   const [isPreviewStarting, setIsPreviewStarting] = useState(false);
   const wasPreviewRunningRef = useRef(false);
 
+  const [loopIterations, setLoopIterations] = useState<LoopIteration[]>([]);
+  const [buildStartedAt, setBuildStartedAt] = useState<number | null>(null);
+  const [buildEndedAt, setBuildEndedAt] = useState<number | null>(null);
+  const [goalMetFlash, setGoalMetFlash] = useState(false);
+  const [goalMetScore, setGoalMetScore] = useState(0);
+  const [reviewAccepted, setReviewAccepted] = useState(false);
+  const [isComposerActive, setIsComposerActive] = useState(false);
+
   const buildAbortRef = useRef<AbortController | null>(null);
   const controlsRef = useRef<OrchestratorControls | null>(null);
   const activeFileIdRef = useRef<string | null>(null);
+  const activeFilePathRef = useRef<string>("");
   const planRef = useRef<ProjectPlan | null>(null);
 
   useEffect(() => {
@@ -176,6 +191,64 @@ export default function AgentApp({
     () => mergeProjectFiles(plan, files, projectId),
     [plan, files, projectId]
   );
+
+  const loopAvgScore = useMemo(() => {
+    const done = files.filter((f) => f.status === "done");
+    if (done.length === 0) return 0;
+    return Math.round(done.reduce((s, f) => s + f.score, 0) / done.length);
+  }, [files]);
+
+  const loopSnapshot = useMemo(
+    () =>
+      deriveLoopEngineeringState({
+        phase,
+        chatMode,
+        isComposerActive,
+        currentRound,
+        loopIterations,
+        buildStartedAt,
+        buildEndedAt,
+        goalMetFlash,
+        reviewAccepted,
+        avgScore: loopAvgScore,
+      }),
+    [
+      phase,
+      chatMode,
+      isComposerActive,
+      currentRound,
+      loopIterations,
+      buildStartedAt,
+      buildEndedAt,
+      goalMetFlash,
+      reviewAccepted,
+      loopAvgScore,
+    ]
+  );
+
+  useEffect(() => {
+    if (!goalMetFlash) return;
+    const t = window.setTimeout(() => setGoalMetFlash(false), 2500);
+    return () => window.clearTimeout(t);
+  }, [goalMetFlash]);
+
+  const trackLoopRound = useCallback((fileId: string, round: FileRoundEvent) => {
+    if (round.task !== "review") return;
+    const filePath =
+      files.find((f) => f.id === fileId)?.file_path ?? activeFilePathRef.current;
+    setLoopIterations((prev) => {
+      const { iterations, goalMetFlash: flash } = recordLoopIterationFromRound(
+        prev,
+        filePath,
+        round
+      );
+      if (flash) {
+        setGoalMetFlash(true);
+        setGoalMetScore(round.score);
+      }
+      return iterations;
+    });
+  }, [files]);
 
   const selectedFile =
     mergedFiles.find((f) => f.id === selectedFileId) ??
@@ -539,6 +612,7 @@ export default function AgentApp({
               onStatus: setStatusMessage,
               onFileStart: (file) => {
                 activeFileIdRef.current = file.id;
+                activeFilePathRef.current = file.file_path;
                 setActiveFile(file);
                 setSelectedFileId(file.id);
                 setCurrentCode("");
@@ -551,6 +625,7 @@ export default function AgentApp({
               onRound: (fileId, event) => {
                 const round = event.data;
                 setCurrentRound(round);
+                trackLoopRound(fileId, round);
                 if (round.code) {
                   setCurrentCode(round.code);
                   setViewerCode(round.code);
@@ -593,7 +668,7 @@ export default function AgentApp({
     } finally {
       setIsLoading(false);
     }
-  }, [refreshFiles]);
+  }, [refreshFiles, trackLoopRound]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -1064,6 +1139,11 @@ export default function AgentApp({
     setIsLoading(true);
     setPhase("building");
     setCenterTab("plan");
+    setBuildStartedAt(Date.now());
+    setBuildEndedAt(null);
+    setLoopIterations([]);
+    setReviewAccepted(false);
+    setGoalMetFlash(false);
 
     appendBuildMessage(USER_MESSAGES.building);
 
@@ -1083,6 +1163,7 @@ export default function AgentApp({
         onStatus: setStatusMessage,
         onFileStart: (file) => {
           activeFileIdRef.current = file.id;
+          activeFilePathRef.current = file.file_path;
           setActiveFile(file);
           setSelectedFileId(file.id);
           setCurrentCode("");
@@ -1102,6 +1183,7 @@ export default function AgentApp({
         onRound: (fileId, event) => {
           const round = event.data;
           setCurrentRound(round);
+          trackLoopRound(fileId, round);
           if (round.code) {
             setCurrentCode(round.code);
             if (
@@ -1136,6 +1218,7 @@ export default function AgentApp({
         onComplete: (finalPlan) => {
           setSummaryPlan(finalPlan);
           setPhase("complete");
+          setBuildEndedAt(Date.now());
           setIsLoading(false);
           setStatusMessage("");
           setActiveProgress(null);
@@ -1167,6 +1250,7 @@ export default function AgentApp({
     selectedFileId,
     appendBuildMessage,
     syncPreviewIfRunning,
+    trackLoopRound,
   ]);
 
   const handlePlanApprove = useCallback(async () => {
@@ -1213,6 +1297,22 @@ export default function AgentApp({
       },
     ]);
   }, []);
+
+  const handleAcceptAll = useCallback(() => {
+    setReviewAccepted(true);
+  }, []);
+
+  const handleLoopRequestChanges = useCallback(() => {
+    const reset = resetLoopEngineeringState();
+    setLoopIterations(reset.loopIterations);
+    setBuildStartedAt(reset.buildStartedAt);
+    setBuildEndedAt(reset.buildEndedAt);
+    setGoalMetFlash(reset.goalMetFlash);
+    setReviewAccepted(reset.reviewAccepted);
+    setSummaryPlan(null);
+    setPhase("idle");
+    handleMakeChanges();
+  }, [handleMakeChanges]);
 
   useEffect(() => {
     if (
@@ -1349,6 +1449,11 @@ export default function AgentApp({
             onPreviewRetry={handlePreviewRetry}
             onPreviewViewportChange={setPreviewViewport}
             chatMode={chatMode}
+            loopSnapshot={loopSnapshot}
+            goalMetScore={goalMetScore}
+            reviewAccepted={reviewAccepted}
+            onAcceptAll={handleAcceptAll}
+            onLoopRequestChanges={handleLoopRequestChanges}
           />
 
           <div className="min-h-0 max-h-[35vh] shrink-0 overflow-y-auto border-t border-surface-border lg:hidden">
@@ -1388,6 +1493,7 @@ export default function AgentApp({
           showBuild={showBuild}
           onBuild={handleBuild}
           buildDisabled={isLoading}
+          onComposerActivity={setIsComposerActive}
         />
       </div>
 
@@ -1418,6 +1524,7 @@ export default function AgentApp({
           showBuild={showBuild}
           onBuild={handleBuild}
           buildDisabled={isLoading}
+          onComposerActivity={setIsComposerActive}
         />
       </div>
 

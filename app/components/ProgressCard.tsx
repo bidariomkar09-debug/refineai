@@ -29,6 +29,19 @@ export default function ProgressCard({ fileName, round }: ProgressCardProps) {
           <p className="mt-1 text-gray-500">
             Round {round.round} — {TASK_LABEL[round.task] ?? round.task}
           </p>
+          {round.task === "review" && round.scoreBefore > 0 && (
+            <p className="mt-1 text-[10px] text-gray-400">
+              {round.scoreBefore}% → {round.score}%
+              {round.scoreImprovement > 0 && (
+                <span className="text-accent-green"> (+{round.scoreImprovement})</span>
+              )}
+            </p>
+          )}
+          {round.improvement && (
+            <p className="mt-0.5 line-clamp-2 text-[10px] text-gray-500">
+              {round.improvement}
+            </p>
+          )}
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-800">
             <div
               className="h-full rounded-full bg-accent motion-safe:transition-all duration-500"
