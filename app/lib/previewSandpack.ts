@@ -1,5 +1,10 @@
 import type { DbFile } from "./agentTypes";
-import { ensureMissingStyleImports } from "./previewAssetStubs";
+import {
+  ensureMissingAssetImports,
+  ensureMissingStyleImports,
+  rewriteAliasImports,
+} from "./previewAssetStubs";
+import { collectSandpackDependencies } from "./sandpackDependencies";
 import { wireAppEntry } from "./wireAppEntry";
 
 export type SandpackTemplate = "react" | "nextjs";
@@ -80,22 +85,17 @@ function stripSandpackTemplateDefaults(
   return result;
 }
 
-function collectSandpackDependencies(files: Record<string, string>): Record<string, string> {
-  const deps: Record<string, string> = {
-    react: "^18.2.0",
-    "react-dom": "^18.2.0",
-  };
-  const allContent = Object.values(files).join("\n");
-  if (/from ['"]react-icons/.test(allContent)) {
-    deps["react-icons"] = "^5.0.0";
-  }
-  if (/from ['"]lucide-react/.test(allContent)) {
-    deps["lucide-react"] = "^0.300.0";
-  }
-  if (/from ['"]framer-motion/.test(allContent)) {
-    deps["framer-motion"] = "^11.0.0";
-  }
-  return deps;
+function collectSandpackDependenciesFromFiles(
+  files: Record<string, string>
+): Record<string, string> {
+  return collectSandpackDependencies(files);
+}
+
+function preparePreviewFiles(files: Record<string, string>): Record<string, string> {
+  const wired = wireAppEntry(files);
+  const aliased = rewriteAliasImports(wired);
+  const withAssets = ensureMissingAssetImports(ensureMissingStyleImports(aliased));
+  return withAssets;
 }
 
 function detectTemplate(files: Record<string, string>): SandpackTemplate {
@@ -205,15 +205,14 @@ export function buildSandpackFiles(
 
   if (Object.keys(files).length === 0) return null;
 
-  const wired = wireAppEntry(files);
-  const withAssets = ensureMissingStyleImports(wired);
-  const template = detectTemplate(withAssets);
+  const prepared = preparePreviewFiles(files);
+  const template = detectTemplate(prepared);
   const scaffolded =
-    template === "react" ? ensureReactScaffold(withAssets) : withAssets;
-  const prepared = ensureMissingStyleImports(scaffolded);
-  const stripped = stripSandpackTemplateDefaults(prepared);
-  const entry = getSandpackEntry(prepared);
-  const dependencies = collectSandpackDependencies(prepared);
+    template === "react" ? ensureReactScaffold(prepared) : prepared;
+  const finalPrepared = preparePreviewFiles(scaffolded);
+  const stripped = stripSandpackTemplateDefaults(finalPrepared);
+  const entry = getSandpackEntry(finalPrepared);
+  const dependencies = collectSandpackDependenciesFromFiles(finalPrepared);
 
   return { files: stripped, template, entry, dependencies };
 }

@@ -51,8 +51,12 @@ type CenterPanelProps = {
   loopSnapshot: LoopEngineeringSnapshot;
   goalMetScore: number;
   reviewAccepted: boolean;
+  previewVerified: boolean;
   onAcceptAll: () => void;
   onLoopRequestChanges: () => void;
+  originalPrompt: string;
+  projectId: string | null;
+  trainingExamplesAdded: number;
 };
 
 function TabButton({
@@ -119,8 +123,12 @@ export default function CenterPanel({
   loopSnapshot,
   goalMetScore,
   reviewAccepted,
+  previewVerified,
   onAcceptAll,
   onLoopRequestChanges,
+  originalPrompt,
+  projectId,
+  trainingExamplesAdded,
 }: CenterPanelProps) {
   return (
     <div className="flex min-w-0 flex-1 flex-col">
@@ -160,9 +168,13 @@ export default function CenterPanel({
             isPreviewRunning={isPreviewRunning}
             confirmDisabled={confirmDisabled}
             reviewAccepted={reviewAccepted}
+            previewVerified={previewVerified}
             loopSnapshot={loopSnapshot}
             onAcceptAll={onAcceptAll}
             onLoopRequestChanges={onLoopRequestChanges}
+            originalPrompt={originalPrompt}
+            projectId={projectId}
+            trainingExamplesAdded={trainingExamplesAdded}
           />
         </div>
 

@@ -7,6 +7,7 @@ import LoadingState from "@/app/components/shell/LoadingState";
 import { useTheme } from "@/app/components/shell/ThemeProvider";
 import ModelConfigSection from "@/app/components/settings/ModelConfigSection";
 import ModelProvidersSection from "@/app/components/settings/ModelProvidersSection";
+import PersonalMemorySection from "@/app/components/settings/PersonalMemorySection";
 
 type SettingsForm = {
   account_name: string;
@@ -225,6 +226,8 @@ export default function SettingsPage() {
         </section>
 
         <ModelConfigSection />
+
+        <PersonalMemorySection />
 
         <ModelProvidersSection />
 

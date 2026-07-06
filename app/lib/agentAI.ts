@@ -1,5 +1,6 @@
 import type { FileTask, ProjectPlan } from "./agentTypes";
-import { getModelConfig, getUserSettings } from "./db";
+import { getModelConfig, getPersonalMemory, getUserSettings } from "./db";
+import { formatMemoryForPrompt } from "./personalMemory";
 import {
   FALLBACK_MODEL,
   generateJSON,
@@ -59,7 +60,11 @@ Score honestly: 95+ means production-ready code with no bugs.
 Output ONLY the file content in "code" field — no markdown fences inside the code string.
 Follow every detail in the Original user requirements section — exact names, copy, links, colors, and sections.
 For App.js / main entry files: import and render ALL section components (Hero, About, Skills, Projects, Contact, Footer, etc.) — never leave a placeholder like "Hello world".
-When using Tailwind CSS: use className only — do NOT import separate .css files unless you also generate that CSS file in the project.`;
+When using Tailwind CSS: use className only — do NOT import separate .css files unless you also generate that CSS file in the project.
+Only import npm packages from: react, react-dom, react-icons, lucide-react, framer-motion, react-router-dom, clsx, axios.
+Only use relative imports (./ or ../) for project files that exist or will exist in the plan.
+Prefer React SPA structure: src/components/*.js — App.js is auto-wired.
+Write production-ready code on the FIRST attempt — aim for 95+ score immediately.`;
 
 export function buildFileTaskUserPrompt(params: {
   task: FileTask;
@@ -70,15 +75,22 @@ export function buildFileTaskUserPrompt(params: {
   currentCode?: string;
   lastReview?: string;
   round: number;
+  personalMemory?: string;
 }): string {
-  const userParts = [
+  const userParts: string[] = [];
+
+  if (params.personalMemory?.trim()) {
+    userParts.push(params.personalMemory.trim());
+  }
+
+  userParts.push(
     `[Project Context]\n${params.projectContext}`,
     `[Completed Files]\n${params.completedFiles}`,
     `[File Path]: ${params.filePath}`,
     `[File Purpose]: ${params.filePurpose}`,
     `[Round]: ${params.round}`,
-    `[Task]: ${params.task}`,
-  ];
+    `[Task]: ${params.task}`
+  );
 
   if (params.currentCode) {
     userParts.push(`[Current Code]:\n${params.currentCode}`);
@@ -123,7 +135,14 @@ export async function callFileTask(params: {
     temperature: number;
   }
 > {
-  const inputContext = buildFileTaskUserPrompt(params);
+  let personalMemory = "";
+  try {
+    personalMemory = formatMemoryForPrompt(await getPersonalMemory());
+  } catch {
+    // memory is optional
+  }
+
+  const inputContext = buildFileTaskUserPrompt({ ...params, personalMemory });
   const selected = await selectModelForRequest({
     explicitOverride: params.modelOverride,
   });

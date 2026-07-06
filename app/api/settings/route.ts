@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserSettings, upsertUserSettings } from "@/app/lib/db";
+import { appendDogfoodNote, getUserSettings, upsertUserSettings } from "@/app/lib/db";
+import type { DogfoodLogEntry } from "@/app/lib/settingsTypes";
 
 export async function GET() {
   try {
@@ -24,11 +25,28 @@ export async function PATCH(request: NextRequest) {
       "temperature",
       "theme",
       "timezone",
+      "dogfood_log",
     ] as const;
     const partial: Record<string, unknown> = {};
     for (const key of allowed) {
       if (body[key] !== undefined) partial[key] = body[key];
     }
+
+    if (body.dogfood_entry && typeof body.dogfood_entry === "object") {
+      const entry = body.dogfood_entry as DogfoodLogEntry;
+      if (entry.projectId && entry.note?.trim()) {
+        const log = await appendDogfoodNote({
+          projectId: entry.projectId,
+          prompt: entry.prompt ?? "",
+          note: entry.note.trim(),
+          createdAt: entry.createdAt ?? new Date().toISOString(),
+        });
+        return NextResponse.json({
+          settings: { ...(await getUserSettings()), dogfood_log: log },
+        });
+      }
+    }
+
     const settings = await upsertUserSettings(partial);
     return NextResponse.json({ settings });
   } catch (err) {

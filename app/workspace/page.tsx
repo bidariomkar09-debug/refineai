@@ -16,9 +16,14 @@ function WorkspaceContent() {
   const projectId =
     searchParams.get("projectId") ?? searchParams.get("projectid");
   const startFresh = searchParams.get("new") === "1";
+  const initialIdea = searchParams.get("idea");
   return (
     <WorkspaceErrorBoundary>
-      <AgentApp initialProjectId={projectId} startFresh={startFresh} />
+      <AgentApp
+        initialProjectId={projectId}
+        startFresh={startFresh}
+        initialIdea={initialIdea}
+      />
     </WorkspaceErrorBoundary>
   );
 }

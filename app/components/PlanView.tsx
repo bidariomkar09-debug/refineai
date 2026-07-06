@@ -29,9 +29,13 @@ type PlanViewProps = {
   isPreviewRunning: boolean;
   confirmDisabled: boolean;
   reviewAccepted: boolean;
+  previewVerified: boolean;
   loopSnapshot: LoopEngineeringSnapshot;
   onAcceptAll: () => void;
   onLoopRequestChanges: () => void;
+  originalPrompt: string;
+  projectId: string | null;
+  trainingExamplesAdded: number;
 };
 
 function IntroMessage({ text, animate }: { text: string; animate?: boolean }) {
@@ -84,9 +88,13 @@ export default function PlanView({
   isPreviewRunning,
   confirmDisabled,
   reviewAccepted,
+  previewVerified,
   loopSnapshot,
   onAcceptAll,
   onLoopRequestChanges,
+  originalPrompt,
+  projectId,
+  trainingExamplesAdded,
 }: PlanViewProps) {
   const isBuilding = phase === "building" || phase === "testing";
   const displayPlan = summaryPlan ?? plan;
@@ -193,6 +201,7 @@ export default function PlanView({
           <HumanReviewPanel
             plan={displayPlan}
             files={files}
+            previewVerified={previewVerified}
             onAcceptAll={onAcceptAll}
             onRequestChanges={onLoopRequestChanges}
           />
@@ -209,6 +218,16 @@ export default function PlanView({
               displayPlan.setupInstructions ??
               "Click Run App below to preview your project live."
             }
+            deployInstructions={
+              displayPlan.deployInstructions ??
+              "Push to GitHub and import on Vercel. Add your environment variables in the Vercel dashboard."
+            }
+            originalPrompt={originalPrompt}
+            projectName={displayPlan.name}
+            projectId={projectId ?? ""}
+            files={files}
+            previewVerified={previewVerified}
+            trainingExamplesAdded={trainingExamplesAdded}
           />
         )}
       </div>

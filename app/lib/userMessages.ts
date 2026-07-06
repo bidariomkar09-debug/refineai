@@ -7,6 +7,8 @@ export const USER_MESSAGES = {
   testing: "Running a quick check...",
   fixing: "Fixing a few things...",
   almostDone: "Almost there...",
+  verifyingPreview: "Verifying preview compiles...",
+  previewVerified: "Preview verified — your app runs!",
   complete: "Your project is ready!",
   paused: "Build paused.",
   changesReceived: "Updating your plan...",

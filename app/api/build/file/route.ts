@@ -8,11 +8,13 @@ import {
   getFile,
   getMessages,
   getProject,
+  getProjectFiles,
   saveFileRound,
   saveTrainingData,
   updateFileStatus,
 } from "@/app/lib/db";
 import { runFileLoop, checkSyntax } from "@/app/lib/fileLoopEngine";
+import { validateFileImports } from "@/app/lib/importGraph";
 import { createSSEStream, sseResponse } from "@/app/lib/streamClient";
 import {
   detectFileType,
@@ -21,7 +23,7 @@ import {
 } from "@/app/lib/trainingTags";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
 import {
-  meetsQualityThreshold,
+  FILE_SCORE_THRESHOLD,
   type ProjectPlan,
 } from "@/app/lib/agentTypes";
 
@@ -181,12 +183,36 @@ export async function POST(request: NextRequest) {
       const finalContent = result.content;
       const finalScore = result.score;
 
-      if (!syntax.valid && !meetsQualityThreshold(result.score)) {
+      const allProjectFiles = await getProjectFiles(projectId);
+      const projectFileMap: Record<string, string> = {};
+      for (const f of allProjectFiles) {
+        if (f.status === "done" && f.content) {
+          const p = f.file_path.startsWith("/") ? f.file_path : `/${f.file_path}`;
+          projectFileMap[p] = f.content;
+        }
+      }
+      const importCheck = validateFileImports(
+        file.file_path,
+        finalContent,
+        projectFileMap
+      );
+
+      const staticPass = syntax.valid && importCheck.valid;
+      const effectiveScore = staticPass
+        ? Math.max(finalScore, FILE_SCORE_THRESHOLD)
+        : finalScore;
+
+      if (!syntax.valid || !importCheck.valid) {
         send({ type: "status", message: USER_MESSAGES.fixing });
       }
 
-      const wasSuccessful = meetsQualityThreshold(finalScore);
-      await finalizeTraining(finalContent, finalScore, result.roundsTaken, wasSuccessful);
+      const wasSuccessful = staticPass;
+      await finalizeTraining(
+        finalContent,
+        effectiveScore,
+        result.roundsTaken,
+        wasSuccessful
+      );
 
       if (!wasSuccessful) {
         send({ type: "status", message: USER_MESSAGES.fixing });
@@ -194,11 +220,12 @@ export async function POST(request: NextRequest) {
         return;
       }
 
-      await completeFile(fileId, finalContent, finalScore, result.roundsTaken);
+      await completeFile(fileId, finalContent, effectiveScore, result.roundsTaken);
       send({
         type: "file_complete",
         fileId,
-        score: finalScore,
+        score: effectiveScore,
+        trainingExamples: trainingRowIds.length,
       });
       send({
         type: "complete",

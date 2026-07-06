@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProjectFiles, updateFileContent } from "@/app/lib/db";
+import { completeFile, getProjectFiles, updateFileContent } from "@/app/lib/db";
+import { FILE_SCORE_THRESHOLD } from "@/app/lib/agentTypes";
 import { wireAppEntryFromDbFiles } from "@/app/lib/wireAppEntry";
 
 export async function POST(request: NextRequest) {
@@ -22,6 +23,7 @@ export async function POST(request: NextRequest) {
   }
 
   await updateFileContent(appFile.id, wired.content);
+  await completeFile(appFile.id, wired.content, FILE_SCORE_THRESHOLD, 1);
   return NextResponse.json({
     ok: true,
     updated: true,

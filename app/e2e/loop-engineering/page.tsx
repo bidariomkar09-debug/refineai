@@ -227,6 +227,12 @@ export default function LoopEngineeringHarnessPage() {
               onDownload={() => {}}
               isRunDisabled={false}
               isPreviewRunning={false}
+              originalPrompt="Build a test app"
+              projectName="Test App"
+              projectId="test-project"
+              files={[]}
+              previewVerified={false}
+              trainingExamplesAdded={12}
             />
           </div>
         )}

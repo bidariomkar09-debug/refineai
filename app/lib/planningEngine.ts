@@ -1,5 +1,7 @@
 import type { ProjectPlan } from "./agentTypes";
 import { generateJSON } from "./agentAI";
+import { getPersonalMemory } from "./db";
+import { formatMemoryForPrompt } from "./personalMemory";
 import { detectNiche, getStackForNiche } from "./techStacks";
 import { estimateBuildMinutes, linkPlanStepsToFiles } from "./planPresentation";
 
@@ -32,17 +34,18 @@ Rules:
 - steps: 5-8 conversational todo items describing WHAT will happen (not file paths in labels)
 - Each step label should read like a Cursor plan todo, e.g. "Build the AI chat so you can talk naturally"
 - relatedPaths must reference actual file paths from the files array
-- List 6-12 files with full paths
+- List 4-8 files with full paths (speed target: ~60s total build)
 - Include README.md always
 - description MUST preserve ALL user-specified content: exact copy/text, section names, links, contact info, colors, layout notes, and design requirements as a structured bullet list
 - If user asks for React + Tailwind (or portfolio/landing without Next.js): use Create React App style paths (src/App.js, src/index.js, src/components/*.js) — do NOT use Next.js app/ router or tsconfig/next.config files
-- If user asks for Next.js or full-stack app: use Next.js 14 App Router (app/page.tsx, app/layout.tsx, etc.) and include package.json, tsconfig.json, next.config.mjs, tailwind.config.ts, postcss.config.mjs, app/globals.css
+- DEFAULT for portfolios, landing pages, and simple sites: React SPA (src/App.js + src/components/*.js) — this guarantees in-browser preview works
+- If user explicitly asks for Next.js or full-stack app: use Next.js 14 App Router (app/page.tsx, app/layout.tsx, etc.) and include package.json, tsconfig.json, next.config.mjs, tailwind.config.ts, postcss.config.mjs, app/globals.css
 - Mark isApiRoute true for app/api/**/route.ts files
-- Cap at 12 files maximum
+- Cap at 8 files maximum for React SPA; cap at 12 for Next.js full-stack
 - File purposes must be plain English for non-technical users
 - introMessage must be warm and conversational, not technical
-- estimatedMinutes should reflect file count (~15 seconds per file)
-- For portfolio sites: plan one file per major section (Hero, About, Skills, Projects, Contact, Footer) plus App.js that imports and renders all sections`;
+- estimatedMinutes should reflect file count (~8 seconds per component file)
+- For portfolio sites: plan one file per major section (Hero, About, Skills, Projects, Contact, Footer) in src/components/*.js ONLY — do NOT include src/App.js (auto-generated), package.json, or index.js (preview scaffold handles these)`;
 
 const REVISION_SYSTEM = `${PLAN_SYSTEM}
 
@@ -82,10 +85,23 @@ export async function generatePlan(idea: string): Promise<ProjectPlan> {
   const niche = detectNiche(idea);
   const suggestedStack = getStackForNiche(niche);
 
-  const { data } = await generateJSON<ProjectPlan>(
-    PLAN_SYSTEM,
-    `User idea: ${idea}\n\nSuggested niche: ${niche}\nSuggested stack: ${JSON.stringify(suggestedStack)}`
-  );
+  let memoryBlock = "";
+  try {
+    memoryBlock = formatMemoryForPrompt(await getPersonalMemory());
+  } catch {
+    // memory is optional
+  }
+
+  const userPrompt = [
+    memoryBlock,
+    `User idea: ${idea}`,
+    `Suggested niche: ${niche}`,
+    `Suggested stack: ${JSON.stringify(suggestedStack)}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const { data } = await generateJSON<ProjectPlan>(PLAN_SYSTEM, userPrompt);
 
   return normalizePlan(data, niche, suggestedStack);
 }
@@ -97,10 +113,22 @@ export async function generatePlanRevision(
   const niche = currentPlan.niche;
   const suggestedStack = getStackForNiche(niche);
 
-  const { data } = await generateJSON<ProjectPlan>(
-    REVISION_SYSTEM,
-    `Current plan:\n${JSON.stringify(currentPlan)}\n\nChanges requested:\n${feedback}`
-  );
+  let memoryBlock = "";
+  try {
+    memoryBlock = formatMemoryForPrompt(await getPersonalMemory());
+  } catch {
+    // memory is optional
+  }
+
+  const userPrompt = [
+    memoryBlock,
+    `Current plan:\n${JSON.stringify(currentPlan)}`,
+    `Changes requested:\n${feedback}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const { data } = await generateJSON<ProjectPlan>(REVISION_SYSTEM, userPrompt);
 
   return {
     ...currentPlan,

@@ -20,6 +20,6 @@ export async function POST(request: NextRequest) {
     const llmResult = await testApiRouteWithLLM(code, routePath);
     return NextResponse.json(llmResult);
   } catch {
-    return NextResponse.json({ passed: true, issues: [] });
+    return NextResponse.json({ passed: false, issues: ["API route test failed"] });
   }
 }

@@ -1,7 +1,12 @@
 "use client";
 
+import { useState } from "react";
+import type { DbFile } from "@/app/lib/agentTypes";
 import type { LoopEngineeringSnapshot } from "@/app/lib/loopEngineeringTypes";
 import { formatElapsed } from "@/app/lib/loopEngineeringState";
+import { formatBuildProof, twitterIntentUrl } from "@/app/lib/buildProof";
+import { meetsQualityThreshold } from "@/app/lib/agentTypes";
+import DogfoodNotes from "./DogfoodNotes";
 
 type LoopEngineeringSummaryProps = {
   snapshot: LoopEngineeringSnapshot;
@@ -10,6 +15,13 @@ type LoopEngineeringSummaryProps = {
   isRunDisabled: boolean;
   isPreviewRunning: boolean;
   setupInstructions?: string;
+  deployInstructions?: string;
+  originalPrompt: string;
+  projectName: string;
+  projectId: string;
+  files: DbFile[];
+  previewVerified: boolean;
+  trainingExamplesAdded: number;
 };
 
 export default function LoopEngineeringSummary({
@@ -19,7 +31,51 @@ export default function LoopEngineeringSummary({
   isRunDisabled,
   isPreviewRunning,
   setupInstructions,
+  deployInstructions,
+  originalPrompt,
+  projectName,
+  projectId,
+  files,
+  previewVerified,
+  trainingExamplesAdded,
 }: LoopEngineeringSummaryProps) {
+  const [copied, setCopied] = useState(false);
+
+  const doneFiles = files.filter((f) => f.status === "done");
+  const fileCount = doneFiles.length;
+  const avgScore =
+    fileCount > 0
+      ? Math.round(doneFiles.reduce((s, f) => s + f.score, 0) / fileCount)
+      : snapshot.goalQualityPercent;
+
+  const proof =
+    originalPrompt.trim() && snapshot.elapsedMs != null
+      ? formatBuildProof({
+          prompt: originalPrompt,
+          projectName,
+          elapsedMs: snapshot.elapsedMs,
+          fileCount,
+          avgScore,
+          previewVerified,
+        })
+      : null;
+
+  const handleCopyProof = async () => {
+    if (!proof) return;
+    try {
+      await navigator.clipboard.writeText(proof.clipboardText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // clipboard unavailable
+    }
+  };
+
+  const handleShareOnX = () => {
+    if (!proof) return;
+    window.open(twitterIntentUrl(proof.tweetText), "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div
       className="space-y-4 rounded-xl border border-accent-green/30 bg-accent-green/5 p-5 motion-safe:animate-fade-in"
@@ -44,12 +100,84 @@ export default function LoopEngineeringSummary({
               {formatElapsed(snapshot.elapsedMs)}
             </span>
           </li>
+          {trainingExamplesAdded > 0 && (
+            <li className="text-indigo-300">
+              +{trainingExamplesAdded} training example
+              {trainingExamplesAdded === 1 ? "" : "s"} added from this build
+            </li>
+          )}
           <li className="text-accent-green">Agent drove every step</li>
         </ul>
       </div>
 
+      {doneFiles.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+            Final file scores
+          </p>
+          <ul className="max-h-36 space-y-1 overflow-y-auto rounded-lg bg-black/20 p-2">
+            {doneFiles
+              .sort((a, b) => a.file_path.localeCompare(b.file_path))
+              .map((file) => (
+                <li
+                  key={file.id}
+                  className="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span className="min-w-0 truncate font-mono text-gray-300">
+                    {file.file_path}
+                  </span>
+                  <span
+                    className={`shrink-0 font-semibold tabular-nums ${
+                      meetsQualityThreshold(file.score)
+                        ? "text-accent-green"
+                        : "text-amber-400"
+                    }`}
+                  >
+                    {file.score}%
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+
       {setupInstructions && (
-        <p className="text-sm text-gray-400">{setupInstructions}</p>
+        <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+            How to run
+          </p>
+          <p className="text-sm text-gray-400">{setupInstructions}</p>
+        </div>
+      )}
+
+      {deployInstructions && (
+        <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+            How to deploy
+          </p>
+          <p className="text-sm text-gray-400">{deployInstructions}</p>
+        </div>
+      )}
+
+      {proof && (
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={handleCopyProof}
+            className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-medium text-white transition hover:border-indigo-500"
+            data-testid="copy-proof-button"
+          >
+            {copied ? "Copied!" : "Copy proof"}
+          </button>
+          <button
+            type="button"
+            onClick={handleShareOnX}
+            className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-medium text-white transition hover:border-indigo-500"
+            data-testid="share-on-x-button"
+          >
+            Share on X
+          </button>
+        </div>
       )}
 
       <button
@@ -68,6 +196,8 @@ export default function LoopEngineeringSummary({
       >
         Download All Files
       </button>
+
+      <DogfoodNotes projectId={projectId} prompt={originalPrompt} />
     </div>
   );
 }

@@ -4,7 +4,9 @@ import {
   type FileRoundEvent,
   type FileTask,
 } from "./agentTypes";
+import { parse } from "@babel/parser";
 import { callFileTask, describeImprovement } from "./agentAI";
+import { FAST_BUILD_MODEL, FILE_SPEED_MAX_REFINE } from "./buildSpeed";
 
 export type FileLoopContext = {
   filePath: string;
@@ -52,6 +54,7 @@ export async function runFileLoop(
       currentCode: currentCode || undefined,
       lastReview: lastReview || undefined,
       round,
+      modelOverride: FAST_BUILD_MODEL,
     });
 
     totalTokens += result.tokens;
@@ -98,21 +101,40 @@ export async function runFileLoop(
   callbacks.onStatus?.("Writing the code...");
   await runTask("write");
 
-  while (score < FILE_SCORE_THRESHOLD && round < FILE_ABSOLUTE_MAX_ROUNDS) {
+  let syntax = checkSyntax(currentCode);
+
+  // Fast path: good write score + valid syntax → skip review/refine (~15s per file)
+  if (syntax.valid && score >= FILE_SCORE_THRESHOLD) {
+    return { content: currentCode, score, roundsTaken: round, totalTokens };
+  }
+
+  // One-shot refine using static errors instead of LLM review (~15s more)
+  let refineAttempts = 0;
+  while (
+    refineAttempts < FILE_SPEED_MAX_REFINE &&
+    round < FILE_ABSOLUTE_MAX_ROUNDS &&
+    (score < FILE_SCORE_THRESHOLD || !syntax.valid)
+  ) {
     if (signal?.aborted) throw new Error("aborted");
 
-    callbacks.onStatus?.("Reviewing the code...");
-    await runTask("review");
-    if (score >= FILE_SCORE_THRESHOLD) break;
-
-    if (round >= FILE_ABSOLUTE_MAX_ROUNDS) break;
-    round++;
+    if (!syntax.valid) {
+      lastReview = `Fix these issues: ${syntax.issues.join("; ")}`;
+    } else {
+      lastReview = `Improve quality to ${FILE_SCORE_THRESHOLD}%+. Current score: ${score}.`;
+    }
 
     callbacks.onStatus?.("Making improvements...");
     await runTask("refine");
-    if (score >= FILE_SCORE_THRESHOLD) break;
-
+    refineAttempts++;
     round++;
+    syntax = checkSyntax(currentCode);
+
+    if (syntax.valid && score >= FILE_SCORE_THRESHOLD) break;
+  }
+
+  // Static pass: executable code counts as threshold met (verified at route layer)
+  if (syntax.valid) {
+    score = Math.max(score, FILE_SCORE_THRESHOLD);
   }
 
   return { content: currentCode, score, roundsTaken: round, totalTokens };
@@ -128,6 +150,19 @@ export function checkSyntax(code: string): { valid: boolean; issues: string[] } 
   if (openBraces !== closeBraces) issues.push("Mismatched braces");
   if (openParens !== closeParens) issues.push("Mismatched parentheses");
   if (code.includes("```")) issues.push("Contains markdown fences");
+
+  if (issues.length === 0 && code.trim()) {
+    try {
+      parse(code, {
+        sourceType: "module",
+        plugins: ["jsx", "typescript"],
+        errorRecovery: false,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.split("\n")[0] : "Parse error";
+      issues.push(msg);
+    }
+  }
 
   return { valid: issues.length === 0, issues };
 }

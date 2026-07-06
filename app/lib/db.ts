@@ -15,6 +15,7 @@ import type {
   CleaningSummary,
   DashboardStats,
   DatasetFile,
+  DogfoodLogEntry,
   EvaluationStats,
   FineTunedModel,
   FineTunedModelStatus,
@@ -47,6 +48,8 @@ import type {
   UserSettings,
 } from "./settingsTypes";
 import { EMPTY_CLEANING_SUMMARY } from "./trainingClean";
+import type { PersonalMemory } from "./personalMemoryTypes";
+import { EMPTY_PERSONAL_MEMORY, normalizePersonalMemory } from "./personalMemory";
 
 let client: SupabaseClient | null = null;
 
@@ -364,8 +367,24 @@ const DEFAULT_SETTINGS: UserSettings = {
   max_rounds: 8,
   temperature: 0.7,
   theme: "dark",
+  dogfood_log: [],
   updated_at: new Date().toISOString(),
 };
+
+function normalizeDogfoodLog(raw: unknown): DogfoodLogEntry[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((e) => e && typeof e === "object")
+    .map((e) => e as DogfoodLogEntry)
+    .slice(0, 200);
+}
+
+export async function appendDogfoodNote(entry: DogfoodLogEntry): Promise<DogfoodLogEntry[]> {
+  const settings = await getUserSettings();
+  const log = [...normalizeDogfoodLog(settings.dogfood_log), entry].slice(-200);
+  const updated = await upsertUserSettings({ dogfood_log: log });
+  return normalizeDogfoodLog(updated.dogfood_log);
+}
 
 export async function getUserSettings(): Promise<UserSettings> {
   const { data, error } = await getClient()
@@ -401,6 +420,61 @@ export async function upsertUserSettings(
   }
   if (error) throw new DbError(error.message);
   return data as UserSettings;
+}
+
+// --- Personal memory ---
+
+export async function getPersonalMemory(): Promise<PersonalMemory> {
+  const { data, error } = await getClient()
+    .from("user_settings")
+    .select("personal_memory")
+    .eq("id", "default")
+    .single();
+
+  if (
+    error?.message?.includes("does not exist") ||
+    error?.message?.includes("Could not find the table") ||
+    error?.message?.includes("personal_memory") ||
+    error?.code === "PGRST116" ||
+    error?.code === "PGRST205"
+  ) {
+    return { ...EMPTY_PERSONAL_MEMORY };
+  }
+  if (error) throw new DbError(error.message);
+  return normalizePersonalMemory(
+    (data as { personal_memory?: unknown })?.personal_memory
+  );
+}
+
+export async function upsertPersonalMemory(
+  memory: PersonalMemory
+): Promise<PersonalMemory> {
+  const normalized = normalizePersonalMemory({
+    ...memory,
+    lastUpdatedAt: new Date().toISOString(),
+  });
+
+  const { data, error } = await getClient()
+    .from("user_settings")
+    .upsert({
+      id: "default",
+      personal_memory: normalized,
+      updated_at: new Date().toISOString(),
+    })
+    .select("personal_memory")
+    .single();
+
+  if (
+    error?.message?.includes("Could not find the table") ||
+    error?.message?.includes("personal_memory") ||
+    error?.code === "PGRST205"
+  ) {
+    return normalized;
+  }
+  if (error) throw new DbError(error.message);
+  return normalizePersonalMemory(
+    (data as { personal_memory?: unknown })?.personal_memory
+  );
 }
 
 export async function deleteProject(id: string): Promise<void> {

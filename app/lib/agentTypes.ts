@@ -173,7 +173,7 @@ export type SSEEvent =
   | { type: "plan"; data: ProjectPlan; projectId: string }
   | { type: "round"; data: FileRoundEvent }
   | { type: "file_start"; filePath: string; fileName: string }
-  | { type: "file_complete"; fileId: string; score: number }
+  | { type: "file_complete"; fileId: string; score: number; trainingExamples?: number }
   | { type: "complete"; data: BuildCompleteEvent }
   | { type: "summary"; data: ProjectPlan & { projectId: string } }
   | { type: "error"; message: string }

@@ -6,7 +6,16 @@ export type UserSettings = {
   max_rounds: number;
   temperature: number;
   theme: "dark" | "light";
+  timezone?: string;
+  dogfood_log?: DogfoodLogEntry[];
   updated_at: string;
+};
+
+export type DogfoodLogEntry = {
+  projectId: string;
+  prompt: string;
+  note: string;
+  createdAt: string;
 };
 
 export type DashboardStats = {

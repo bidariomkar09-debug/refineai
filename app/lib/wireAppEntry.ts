@@ -99,6 +99,63 @@ ${body}
 `;
 }
 
+function componentImported(content: string, name: string): boolean {
+  return (
+    content.includes(`import ${name} `) ||
+    content.includes(`import ${name} from`) ||
+    content.includes(`import { ${name}`)
+  );
+}
+
+/** Merge missing section component imports into App even when not a stub. */
+export function ensureAppImportsAllSections(
+  files: Record<string, string>
+): Record<string, string> {
+  const result = { ...files };
+  const appPath = findAppPath(result);
+  if (!appPath) return result;
+
+  const components = findSectionComponents(result, appPath);
+  const missing = components.filter((c) => !componentImported(result[appPath] ?? "", c.name));
+  if (missing.length === 0) return result;
+
+  let content = result[appPath] ?? "";
+  const importLines = missing.map((c) => `import ${c.name} from "${c.importPath}";`).join("\n");
+
+  if (/^import\s/m.test(content)) {
+    const lines = content.split("\n");
+    let lastImportIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*import\s/.test(lines[i])) lastImportIdx = i;
+    }
+    if (lastImportIdx >= 0) {
+      lines.splice(lastImportIdx + 1, 0, importLines);
+      content = lines.join("\n");
+    } else {
+      content = `${importLines}\n${content}`;
+    }
+  } else {
+    content = `import React from "react";\n${importLines}\n\n${content}`;
+  }
+
+  const missingJsx = missing.filter((c) => !content.includes(`<${c.name}`));
+  if (missingJsx.length > 0) {
+    const tags = missingJsx.map((c) => `<${c.name} />`).join("\n      ");
+    if (content.includes("</div>")) {
+      content = content.replace(/(\s*)<\/div>/, `$1      ${tags}\n$1</div>`);
+    } else {
+      const returnMatch = content.match(/return\s*\(\s*\n?/);
+      if (returnMatch && returnMatch.index != null) {
+        const insertAt = returnMatch.index + returnMatch[0].length;
+        content = `${content.slice(0, insertAt)}\n      ${tags}\n${content.slice(insertAt)}`;
+      }
+    }
+  }
+
+  result[appPath] = content;
+  return result;
+}
+
 /** Replace stub App.js with imports for all section components in src/. */
 export function wireAppEntry(files: Record<string, string>): Record<string, string> {
   const result = { ...files };
@@ -109,10 +166,11 @@ export function wireAppEntry(files: Record<string, string>): Record<string, stri
   const components = findSectionComponents(result, appPath);
   if (components.length === 0) return result;
 
-  if (!isStubAppContent(current)) return result;
+  if (isStubAppContent(current)) {
+    result[appPath] = synthesizeAppJs(appPath, components);
+  }
 
-  result[appPath] = synthesizeAppJs(appPath, components);
-  return result;
+  return ensureAppImportsAllSections(result);
 }
 
 export function wireAppEntryFromDbFiles(

@@ -7,6 +7,7 @@ import { completionMessage } from "@/app/lib/userMessages";
 type HumanReviewPanelProps = {
   plan: ProjectPlan;
   files: DbFile[];
+  previewVerified?: boolean;
   onAcceptAll: () => void;
   onRequestChanges: () => void;
 };
@@ -14,6 +15,7 @@ type HumanReviewPanelProps = {
 export default function HumanReviewPanel({
   plan,
   files,
+  previewVerified = false,
   onAcceptAll,
   onRequestChanges,
 }: HumanReviewPanelProps) {
@@ -37,6 +39,14 @@ export default function HumanReviewPanel({
           Step 5 — Human reviews
         </p>
         <h3 className="mt-1 text-lg font-semibold text-white">Review your build</h3>
+        {previewVerified && (
+          <p
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-accent-green/40 bg-accent-green/10 px-2.5 py-1 text-xs font-medium text-accent-green"
+            data-testid="preview-verified-badge"
+          >
+            ✓ Preview verified
+          </p>
+        )}
         <p className="mt-2 text-sm leading-relaxed text-gray-300">
           {completionMessage(plan.name, doneFiles.length, avgScore)}
         </p>

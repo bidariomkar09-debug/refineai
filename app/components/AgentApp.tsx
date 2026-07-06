@@ -76,9 +76,11 @@ function newId() {
 export default function AgentApp({
   initialProjectId,
   startFresh = false,
+  initialIdea,
 }: {
   initialProjectId?: string | null;
   startFresh?: boolean;
+  initialIdea?: string | null;
 } = {}) {
   const router = useRouter();
   const [projects, setProjects] = useState<DbProject[]>([]);
@@ -176,12 +178,15 @@ export default function AgentApp({
   const [goalMetScore, setGoalMetScore] = useState(0);
   const [reviewAccepted, setReviewAccepted] = useState(false);
   const [isComposerActive, setIsComposerActive] = useState(false);
+  const [previewVerified, setPreviewVerified] = useState(false);
+  const [buildTrainingExamples, setBuildTrainingExamples] = useState(0);
 
   const buildAbortRef = useRef<AbortController | null>(null);
   const controlsRef = useRef<OrchestratorControls | null>(null);
   const activeFileIdRef = useRef<string | null>(null);
   const activeFilePathRef = useRef<string>("");
   const planRef = useRef<ProjectPlan | null>(null);
+  const initialIdeaSubmittedRef = useRef(false);
 
   useEffect(() => {
     planRef.current = plan;
@@ -191,6 +196,13 @@ export default function AgentApp({
     () => mergeProjectFiles(plan, files, projectId),
     [plan, files, projectId]
   );
+
+  const originalPrompt = useMemo(() => {
+    const firstUser = messages.find((m) => m.role === "user");
+    if (firstUser?.content?.trim()) return firstUser.content.trim();
+    if (plan?.description?.trim()) return plan.description.trim();
+    return "";
+  }, [messages, plan]);
 
   const loopAvgScore = useMemo(() => {
     const done = files.filter((f) => f.status === "done");
@@ -440,10 +452,15 @@ export default function AgentApp({
     }
   }, [projectId, files, refreshFiles, appendBuildMessage, startSandpackPreview]);
 
-  const handlePreviewRefresh = useCallback(() => {
+  const handlePreviewRefresh = useCallback(async () => {
+    if (previewMode === "sandpack" && projectId) {
+      const updated = await refreshFiles(projectId);
+      await startSandpackPreview(updated ?? files);
+      return;
+    }
     setPreviewIframeKey((k) => k + 1);
     setPreviewLastUpdated(new Date().toISOString());
-  }, []);
+  }, [previewMode, projectId, refreshFiles, startSandpackPreview, files]);
 
   const handlePreviewRetry = useCallback(() => {
     handleRunApp();
@@ -795,6 +812,13 @@ export default function AgentApp({
     [loadProjects, refreshFiles]
   );
 
+  useEffect(() => {
+    const idea = initialIdea?.trim();
+    if (!idea || !startFresh || initialIdeaSubmittedRef.current || projectId) return;
+    initialIdeaSubmittedRef.current = true;
+    void handlePlanIdea(idea);
+  }, [initialIdea, startFresh, projectId, handlePlanIdea]);
+
   const handleRevision = useCallback(
     async (message: string) => {
       if (!projectId) return;
@@ -1144,6 +1168,8 @@ export default function AgentApp({
     setLoopIterations([]);
     setReviewAccepted(false);
     setGoalMetFlash(false);
+    setPreviewVerified(false);
+    setBuildTrainingExamples(0);
 
     appendBuildMessage(USER_MESSAGES.building);
 
@@ -1197,7 +1223,10 @@ export default function AgentApp({
             prev ? { ...prev, round } : null
           );
         },
-        onFileComplete: (fileId, score) => {
+        onFileComplete: (fileId, score, trainingExamples) => {
+          if (trainingExamples) {
+            setBuildTrainingExamples((n) => n + trainingExamples);
+          }
           activeFileIdRef.current = null;
           setActiveFile(null);
           setFiles((prev) =>
@@ -1223,7 +1252,7 @@ export default function AgentApp({
           setStatusMessage("");
           setActiveProgress(null);
           setActiveFile(null);
-          setCenterTab("plan");
+          setCenterTab("preview");
           refreshFiles(projectId).then((updated) => {
             const done = (updated ?? []).filter((f) => f.status === "done");
             const avgScore =
@@ -1235,7 +1264,15 @@ export default function AgentApp({
             );
           });
           loadProjects();
-          syncPreviewIfRunning();
+          void handleRunApp();
+          void fetch("/api/memory", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId }),
+          }).catch(() => {});
+        },
+        onPreviewVerified: (verified) => {
+          setPreviewVerified(verified);
         },
       },
       buildAbortRef.current.signal
@@ -1249,8 +1286,8 @@ export default function AgentApp({
     loadProjects,
     selectedFileId,
     appendBuildMessage,
-    syncPreviewIfRunning,
     trackLoopRound,
+    handleRunApp,
   ]);
 
   const handlePlanApprove = useCallback(async () => {
@@ -1452,8 +1489,12 @@ export default function AgentApp({
             loopSnapshot={loopSnapshot}
             goalMetScore={goalMetScore}
             reviewAccepted={reviewAccepted}
+            previewVerified={previewVerified}
             onAcceptAll={handleAcceptAll}
             onLoopRequestChanges={handleLoopRequestChanges}
+            originalPrompt={originalPrompt}
+            projectId={projectId}
+            trainingExamplesAdded={buildTrainingExamples}
           />
 
           <div className="min-h-0 max-h-[35vh] shrink-0 overflow-y-auto border-t border-surface-border lg:hidden">
