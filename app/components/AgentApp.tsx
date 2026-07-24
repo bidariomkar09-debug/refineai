@@ -57,7 +57,9 @@ import MobileHeader from "./mobile/MobileHeader";
 import SlideDrawer from "./mobile/SlideDrawer";
 import BottomSheet from "./mobile/BottomSheet";
 import CodeViewerModal from "./mobile/CodeViewerModal";
+import PreviewOverlay from "./mobile/PreviewOverlay";
 import CodeViewer from "./CodeViewer";
+import LoopEngineeringPanel from "./loop/LoopEngineeringPanel";
 import SidebarNav from "./shell/SidebarNav";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -93,6 +95,7 @@ export default function AgentApp({
   const [codeModalOpen, setCodeModalOpen] = useState(false);
   const [navDrawerOpen, setNavDrawerOpen] = useState(false);
   const [buildSheetOpen, setBuildSheetOpen] = useState(false);
+  const [previewOverlayOpen, setPreviewOverlayOpen] = useState(false);
   const [tabletSidebarExpanded, setTabletSidebarExpanded] = useState(false);
 
   const isMobile = useIsMobile();
@@ -1495,36 +1498,41 @@ export default function AgentApp({
   }, [isTablet, isBuilding]);
 
   const codeFile = activeFile ?? selectedFile;
+  const showPreviewChip =
+    isMobile &&
+    (previewStatus === "running" ||
+      previewStatus === "installing" ||
+      previewStatus === "starting" ||
+      phase === "complete");
+
+  const chatLiveProps = {
+    livePlan: plan,
+    liveFiles: mergedFiles,
+    phase,
+    statusMessage,
+    currentRound,
+    activeFileName: activeFile?.file_name ?? activeProgress?.fileName ?? null,
+    onPause: () => controlsRef.current?.pause(),
+    onSkip: () => controlsRef.current?.skipCurrent(),
+  };
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
       <MobileHeader
         showLogo
+        building={isBuilding}
         onMenuClick={() => setNavDrawerOpen(true)}
-        rightSlot={
-          <div className="flex items-center gap-2">
-            <FilesButton onClick={() => setFileSheetOpen(true)} />
-            {isBuilding && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => controlsRef.current?.pause()}
-                  className="touch-target rounded-lg border border-surface-border px-3 py-1.5 text-xs text-gray-300 hover:text-white"
-                >
-                  Pause
-                </button>
-                <button
-                  type="button"
-                  onClick={() => controlsRef.current?.skipCurrent()}
-                  className="touch-target rounded-lg border border-surface-border px-3 py-1.5 text-xs text-gray-300 hover:text-white"
-                >
-                  Skip
-                </button>
-              </>
-            )}
-          </div>
-        }
+        rightSlot={<FilesButton onClick={() => setFileSheetOpen(true)} />}
       />
+
+      {/* Mobile: compact loop status pill */}
+      <div className="md:hidden">
+        <LoopEngineeringPanel
+          snapshot={loopSnapshot}
+          goalMetScore={goalMetScore}
+          compact
+        />
+      </div>
 
       <header className="hidden shrink-0 items-center justify-between border-b border-surface-border bg-surface-raised px-4 py-2.5 lg:flex">
         <div className="flex items-center gap-3">
@@ -1571,6 +1579,7 @@ export default function AgentApp({
         />
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0 lg:pb-0">
+          {/* Tablet/desktop: center plan+preview panel */}
           <CenterPanel
             centerTab={centerTab}
             onTabChange={setCenterTab}
@@ -1627,7 +1636,41 @@ export default function AgentApp({
             onResumeBuild={handleResumeBuild}
           />
 
-          <div className="min-h-0 max-h-[35vh] shrink-0 overflow-y-auto border-t border-surface-border lg:hidden">
+          {/* Mobile: full-height chat (Cursor-style) */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:hidden">
+            {showResumeBuild && (
+              <div className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-amber-100">
+                    Build paused after refresh — resume remaining files?
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleResumeBuild}
+                    className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-black"
+                  >
+                    Resume build
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <ChatMessages
+                messages={messages}
+                mobile
+                onPlanApprove={handlePlanApprove}
+                onPlanModify={handlePlanModify}
+                onPlanAnswer={handlePlanMode}
+                onDebugApply={handleDebugApply}
+                appliedDebugMessageIds={appliedDebugMessageIds}
+                actionsDisabled={isLoading}
+                {...chatLiveProps}
+              />
+            </div>
+          </div>
+
+          {/* Tablet: compact chat strip under center panel */}
+          <div className="hidden min-h-0 max-h-[35vh] shrink-0 overflow-y-auto border-t border-surface-border md:block lg:hidden">
             <ChatMessages
               messages={messages}
               compact
@@ -1637,6 +1680,7 @@ export default function AgentApp({
               onDebugApply={handleDebugApply}
               appliedDebugMessageIds={appliedDebugMessageIds}
               actionsDisabled={isLoading}
+              {...chatLiveProps}
             />
           </div>
         </div>
@@ -1680,6 +1724,17 @@ export default function AgentApp({
           </svg>
         </button>
       </div>
+
+      {/* Mobile Preview chip */}
+      {showPreviewChip && (
+        <button
+          type="button"
+          onClick={() => setPreviewOverlayOpen(true)}
+          className="fixed bottom-[calc(8.5rem+env(safe-area-inset-bottom,0px)+var(--keyboard-offset,0px))] right-4 z-40 touch-press rounded-full border border-indigo-500/40 bg-indigo-600 px-3 py-2 text-xs font-medium text-white shadow-lg md:hidden"
+        >
+          Preview ▸
+        </button>
+      )}
 
       <div className="fixed inset-x-0 z-40 bottom-[calc(4rem+env(safe-area-inset-bottom,0px)+var(--keyboard-offset,0px))] md:hidden">
         <InputBox
@@ -1741,6 +1796,26 @@ export default function AgentApp({
         activeFileId={activeFile?.id ?? null}
         currentRound={currentRound}
         statusMessage={statusMessage}
+      />
+
+      <PreviewOverlay
+        open={previewOverlayOpen}
+        onClose={() => setPreviewOverlayOpen(false)}
+        status={previewStatus}
+        lastUpdated={previewLastUpdated}
+        iframeKey={previewIframeKey}
+        viewport={previewViewport}
+        logs={previewLogs}
+        terminalOpen={terminalOpen}
+        previewMode={previewMode}
+        sandpackFiles={sandpackFiles}
+        sandpackTemplate={sandpackTemplate}
+        sandpackEntry={sandpackEntry}
+        sandpackDependencies={sandpackDependencies}
+        onToggleTerminal={() => setTerminalOpen((v) => !v)}
+        onRefresh={handlePreviewRefresh}
+        onRetry={handlePreviewRetry}
+        onViewportChange={setPreviewViewport}
       />
 
       <SlideDrawer open={navDrawerOpen} onClose={() => setNavDrawerOpen(false)} widthClass="w-64">

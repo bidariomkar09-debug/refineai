@@ -97,8 +97,10 @@ export default function InputBox({
   return (
     <div
       className={`shrink-0 border-t border-surface-border bg-surface ${
-        isPanel ? "px-3 py-3" : "px-4 py-4 sm:px-6"
-      }`}
+        mobile
+          ? "shadow-[0_-8px_24px_rgba(0,0,0,0.35)]"
+          : ""
+      } ${isPanel ? "px-3 py-3" : "px-4 py-4 sm:px-6"}`}
     >
       <div className={`${isPanel ? "w-full" : "mx-auto max-w-3xl"}`}>
         {showBuild && onBuild && (

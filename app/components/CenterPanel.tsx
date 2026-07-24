@@ -141,7 +141,7 @@ export default function CenterPanel({
   onResumeBuild,
 }: CenterPanelProps) {
   return (
-    <div className="flex min-w-0 flex-1 flex-col">
+    <div className="hidden min-w-0 flex-1 flex-col md:flex">
       <LoopEngineeringPanel
         snapshot={loopSnapshot}
         goalMetScore={goalMetScore}
