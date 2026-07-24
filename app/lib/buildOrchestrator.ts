@@ -2,9 +2,15 @@ import {
   FILE_SCORE_THRESHOLD,
   meetsQualityThreshold,
   type DbFile,
+  type FileStatus,
   type ProjectPlan,
   type SSEEvent,
 } from "./agentTypes";
+import {
+  isFileOrchestratorComplete,
+  isFileTrulyComplete,
+  meetsVerifiedQualityThreshold,
+} from "./fileScoring";
 import {
   BUILD_PARALLEL_BATCH,
   PREVIEW_VERIFY_MAX_ATTEMPTS,
@@ -17,7 +23,18 @@ export type OrchestratorCallbacks = {
   onStatus: (message: string) => void;
   onFileStart: (file: DbFile) => void;
   onRound: (fileId: string, round: SSEEvent & { type: "round" }) => void;
-  onFileComplete: (fileId: string, score: number, trainingExamples?: number) => void;
+  onFileComplete: (
+    fileId: string,
+    score: number,
+    trainingExamples?: number,
+    meta?: {
+      aiScore?: number;
+      status?: FileStatus;
+      runtimeVerified?: boolean;
+      runtimeErrors?: string[];
+    }
+  ) => void;
+  onRetry?: (message: string) => void;
   onComplete: (summaryPlan: ProjectPlan) => void;
   onPreviewVerified?: (verified: boolean) => void;
 };
@@ -59,7 +76,7 @@ async function runPreviewVerifyWithRetries(
   projectId: string,
   callbacks: Pick<
     OrchestratorCallbacks,
-    "onStatus" | "onFileStart" | "onRound" | "onFileComplete"
+    "onStatus" | "onFileStart" | "onRound" | "onFileComplete" | "onRetry"
   >,
   signal?: AbortSignal
 ): Promise<boolean> {
@@ -100,7 +117,9 @@ function getSubThresholdFiles(files: DbFile[]): DbFile[] {
   return files.filter(
     (f) =>
       f.status !== "skipped" &&
-      ((f.status === "done" && !meetsQualityThreshold(f.score)) ||
+      f.status !== "best_effort" &&
+      f.status !== "needs_fix" &&
+      ((f.status === "done" && !meetsVerifiedQualityThreshold(f)) ||
         f.status === "building")
   );
 }
@@ -110,7 +129,7 @@ async function rebuildFile(
   file: DbFile,
   callbacks: Pick<
     OrchestratorCallbacks,
-    "onStatus" | "onFileStart" | "onRound" | "onFileComplete"
+    "onStatus" | "onFileStart" | "onRound" | "onFileComplete" | "onRetry"
   >,
   signal?: AbortSignal
 ): Promise<void> {
@@ -128,10 +147,18 @@ async function rebuildFile(
     (event) => {
       if (event.type === "status") {
         callbacks.onStatus(event.message);
+        if (event.retry) callbacks.onRetry?.(event.message);
+      } else if (event.type === "retry") {
+        callbacks.onRetry?.(event.message);
       } else if (event.type === "round") {
         callbacks.onRound(file.id, event);
       } else if (event.type === "file_complete") {
-        callbacks.onFileComplete(event.fileId, event.score, event.trainingExamples);
+        callbacks.onFileComplete(event.fileId, event.score, event.trainingExamples, {
+          aiScore: event.aiScore,
+          status: event.status,
+          runtimeVerified: event.runtimeVerified,
+          runtimeErrors: event.runtimeErrors,
+        });
       }
     },
     signal
@@ -142,7 +169,7 @@ export async function runQualityPass(
   projectId: string,
   callbacks: Pick<
     OrchestratorCallbacks,
-    "onStatus" | "onFileStart" | "onRound" | "onFileComplete"
+    "onStatus" | "onFileStart" | "onRound" | "onFileComplete" | "onRetry"
   >,
   signal?: AbortSignal
 ): Promise<boolean> {
@@ -153,11 +180,7 @@ export async function runQualityPass(
     const subThreshold = getSubThresholdFiles(freshFiles);
 
     if (subThreshold.length === 0) {
-      return freshFiles.every(
-        (f) =>
-          f.status === "skipped" ||
-          (f.status === "done" && meetsQualityThreshold(f.score))
-      );
+      return freshFiles.every((f) => isFileOrchestratorComplete(f));
     }
 
     callbacks.onStatus(USER_MESSAGES.fixing);
@@ -169,11 +192,7 @@ export async function runQualityPass(
   }
 
   const finalFiles = await fetchProjectFiles(projectId);
-  return finalFiles.every(
-    (f) =>
-      f.status === "skipped" ||
-      (f.status === "done" && meetsQualityThreshold(f.score))
-  );
+  return finalFiles.every((f) => isFileOrchestratorComplete(f));
 }
 
 async function buildSingleFile(
@@ -181,7 +200,7 @@ async function buildSingleFile(
   file: DbFile,
   callbacks: Pick<
     OrchestratorCallbacks,
-    "onStatus" | "onFileStart" | "onRound" | "onFileComplete"
+    "onStatus" | "onFileStart" | "onRound" | "onFileComplete" | "onRetry"
   >,
   signal?: AbortSignal,
   waitIfPaused?: () => Promise<void>
@@ -197,10 +216,18 @@ async function buildSingleFile(
     (event) => {
       if (event.type === "status") {
         callbacks.onStatus(event.message);
+        if (event.retry) callbacks.onRetry?.(event.message);
+      } else if (event.type === "retry") {
+        callbacks.onRetry?.(event.message);
       } else if (event.type === "round") {
         callbacks.onRound(file.id, event);
       } else if (event.type === "file_complete") {
-        callbacks.onFileComplete(event.fileId, event.score, event.trainingExamples);
+        callbacks.onFileComplete(event.fileId, event.score, event.trainingExamples, {
+          aiScore: event.aiScore,
+          status: event.status,
+          runtimeVerified: event.runtimeVerified,
+          runtimeErrors: event.runtimeErrors,
+        });
       }
     },
     signal

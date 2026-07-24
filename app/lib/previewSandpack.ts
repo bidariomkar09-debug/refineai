@@ -26,6 +26,7 @@ function usesTailwind(files: Record<string, string>): boolean {
 }
 
 function getSandpackEntry(files: Record<string, string>): string {
+  // Prefer root entry — Sandpack CRA template boots from /index.js
   if (files["/index.js"]) return "/index.js";
   if (files["/index.tsx"]) return "/index.tsx";
   if (files["/src/index.js"]) return "/src/index.js";
@@ -41,45 +42,29 @@ function stripSandpackTemplateDefaults(
   const paths = Object.keys(files);
 
   const hasSrcApp = paths.some((p) => /\/src\/App\.(jsx?|tsx?)$/i.test(p));
-  const hasRootApp = paths.some((p) => /^\/App\.(jsx?|tsx?)$/i.test(p));
+  const hasRootIndex = Boolean(files["/index.js"] || files["/index.tsx"]);
 
-  const templateDefaults = [
-    "/App.js",
-    "/App.tsx",
-    "/index.js",
-    "/index.tsx",
-    "/index.css",
-    "/styles.css",
-    "/styles.module.css",
-    "/public/index.html",
-  ];
-
-  for (const path of templateDefaults) {
-    if (files[path]) continue;
-    if (path.startsWith("/App") && (hasSrcApp || hasRootApp)) {
-      result[path] = false;
-    } else if (path === "/index.js" || path === "/index.tsx") {
-      if (files["/index.js"] || files["/index.tsx"] || files["/src/index.js"] || files["/src/index.tsx"]) {
-        result[path] = false;
-      }
-    } else if (path === "/public/index.html" && files["/public/index.html"]) {
-      result[path] = false;
-    } else if ((path === "/index.css" || path === "/styles.css") && !files[path]) {
-      const hasStyles = paths.some((p) => p.endsWith(".css"));
-      if (hasStyles) result[path] = false;
-    }
-  }
-
+  // Hide template App.* when the real app lives under /src
   if (hasSrcApp) {
-    result["/App.js"] = false;
-    result["/App.tsx"] = false;
+    if (!files["/App.js"]) result["/App.js"] = false;
+    if (!files["/App.tsx"]) result["/App.tsx"] = false;
   }
 
-  // Always hide template defaults when we supply our own entry + html
-  if (files["/index.js"] || files["/public/index.html"]) {
-    for (const path of ["/App.js", "/App.tsx", "/index.js", "/index.tsx", "/styles.css"]) {
-      if (!files[path]) result[path] = false;
-    }
+  // Hide unused style defaults
+  if (!files["/styles.css"] && paths.some((p) => p.endsWith(".css"))) {
+    result["/styles.css"] = false;
+  }
+  if (!files["/styles.module.css"]) {
+    result["/styles.module.css"] = false;
+  }
+  if (!files["/index.css"] && (files["/src/index.css"] || paths.some((p) => p.endsWith(".css")))) {
+    result["/index.css"] = false;
+  }
+
+  // Never hide /index.js when we don't have a root entry — Sandpack CRA needs it.
+  // Only hide template /index.tsx when we already ship /index.js.
+  if (hasRootIndex && !files["/index.tsx"]) {
+    result["/index.tsx"] = false;
   }
 
   return result;
@@ -121,11 +106,12 @@ function ensureReactScaffold(files: Record<string, string>): Record<string, stri
     Object.keys(result).find((p) => /\/App\.(jsx?|tsx?)$/.test(p)) ??
     Object.keys(result).find((p) => /\/app\.(jsx?|tsx?)$/i.test(p));
 
-  const indexPath = Object.keys(result).find((p) =>
-    /\/index\.(jsx?|tsx?)$/.test(p)
+  // Sandpack CRA requires a ROOT /index.js — /src/index.js alone is not enough.
+  const rootIndexPath = Object.keys(result).find((p) =>
+    /^\/index\.(jsx?|tsx?)$/.test(p)
   );
 
-  if (appPath && !indexPath) {
+  if (appPath && !rootIndexPath) {
     const appBase = appPath.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "App";
     const importPath = appPath.startsWith("/src/")
       ? `./src/${appBase}`
@@ -133,10 +119,15 @@ function ensureReactScaffold(files: Record<string, string>): Record<string, stri
         ? `./${appPath.split("/").slice(1, -1).join("/")}/${appBase}`.replace(/^\.\//, "./")
         : `./${appBase}`;
 
+    const cssImport =
+      result["/src/index.css"] || result["/index.css"]
+        ? `import "${result["/src/index.css"] ? "./src/index.css" : "./index.css"}";\n`
+        : "";
+
     result["/index.js"] = `import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "${importPath}";
-
+${cssImport}
 const root = createRoot(document.getElementById("root"));
 root.render(<App />);`;
   }

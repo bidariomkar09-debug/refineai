@@ -26,6 +26,7 @@ export async function PATCH(request: NextRequest) {
       "theme",
       "timezone",
       "dogfood_log",
+      "developer_mode",
     ] as const;
     const partial: Record<string, unknown> = {};
     for (const key of allowed) {

@@ -5,7 +5,8 @@ import type { DbFile } from "@/app/lib/agentTypes";
 import type { LoopEngineeringSnapshot } from "@/app/lib/loopEngineeringTypes";
 import { formatElapsed } from "@/app/lib/loopEngineeringState";
 import { formatBuildProof, twitterIntentUrl } from "@/app/lib/buildProof";
-import { meetsQualityThreshold } from "@/app/lib/agentTypes";
+import { isFileTrulyComplete } from "@/app/lib/fileScoring";
+import FileBadges from "./FileBadges";
 import DogfoodNotes from "./DogfoodNotes";
 
 type LoopEngineeringSummaryProps = {
@@ -41,11 +42,12 @@ export default function LoopEngineeringSummary({
 }: LoopEngineeringSummaryProps) {
   const [copied, setCopied] = useState(false);
 
-  const doneFiles = files.filter((f) => f.status === "done");
+  const doneFiles = files.filter((f) => f.status === "done" || f.status === "needs_fix");
+  const verifiedFiles = doneFiles.filter((f) => isFileTrulyComplete(f));
   const fileCount = doneFiles.length;
   const avgScore =
-    fileCount > 0
-      ? Math.round(doneFiles.reduce((s, f) => s + f.score, 0) / fileCount)
+    verifiedFiles.length > 0
+      ? Math.round(verifiedFiles.reduce((s, f) => s + f.score, 0) / verifiedFiles.length)
       : snapshot.goalQualityPercent;
 
   const proof =
@@ -126,15 +128,7 @@ export default function LoopEngineeringSummary({
                   <span className="min-w-0 truncate font-mono text-gray-300">
                     {file.file_path}
                   </span>
-                  <span
-                    className={`shrink-0 font-semibold tabular-nums ${
-                      meetsQualityThreshold(file.score)
-                        ? "text-accent-green"
-                        : "text-amber-400"
-                    }`}
-                  >
-                    {file.score}%
-                  </span>
+                  <FileBadges file={file} compact />
                 </li>
               ))}
           </ul>
@@ -185,9 +179,13 @@ export default function LoopEngineeringSummary({
         onClick={onRunApp}
         disabled={isRunDisabled || isPreviewRunning}
         className="w-full rounded-xl bg-accent-green py-3 text-sm font-semibold text-white transition hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+        data-testid="run-app-button"
       >
         {isPreviewRunning ? "Starting app..." : "Run App"}
       </button>
+      <p className="text-center text-[11px] text-gray-500">
+        Opens the Preview tab and runs your app in-browser
+      </p>
 
       <button
         type="button"

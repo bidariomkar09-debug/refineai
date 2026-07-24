@@ -11,6 +11,7 @@ import {
   selectModelForRequest,
   selectModelIdForRequest,
 } from "./openaiClient";
+import { isRetriableProviderError } from "./modelProviders";
 import { modelUsedLabel } from "./modelProviders";
 
 export {
@@ -127,10 +128,13 @@ export async function callFileTask(params: {
   lastReview?: string;
   round: number;
   modelOverride?: string;
+  simplified?: boolean;
+  onRetry?: (message: string) => void;
 }): Promise<
   FileTaskResult & {
     tokens: number;
     inputContext: string;
+    memoryContext: string;
     modelUsed: string;
     temperature: number;
   }
@@ -142,7 +146,20 @@ export async function callFileTask(params: {
     // memory is optional
   }
 
-  const inputContext = buildFileTaskUserPrompt({ ...params, personalMemory });
+  const projectContext = params.simplified
+    ? params.projectContext.split("\n").slice(0, 8).join("\n")
+    : params.projectContext;
+
+  const completedFiles = params.simplified
+    ? params.completedFiles.slice(0, 1500)
+    : params.completedFiles;
+
+  const inputContext = buildFileTaskUserPrompt({
+    ...params,
+    projectContext,
+    completedFiles,
+    personalMemory,
+  });
   const selected = await selectModelForRequest({
     explicitOverride: params.modelOverride,
   });
@@ -156,7 +173,7 @@ export async function callFileTask(params: {
     // use default
   }
 
-  try {
+  const invoke = async () => {
     const { data, tokens, modelUsed } = await generateJSONWithFallback<{
       code?: string;
       review?: string;
@@ -171,6 +188,7 @@ export async function callFileTask(params: {
         score,
         tokens,
         inputContext,
+        memoryContext: personalMemory,
         modelUsed,
         temperature,
       };
@@ -181,29 +199,97 @@ export async function callFileTask(params: {
       score,
       tokens,
       inputContext,
+      memoryContext: personalMemory,
       modelUsed,
       temperature,
     };
-  } catch {
-    const score = params.task === "review" ? 70 : 60;
-    if (params.task === "review") {
+  };
+
+  try {
+    return await invoke();
+  } catch (firstErr) {
+    if (!isRetriableProviderError(firstErr)) {
+      const score = params.task === "review" ? 70 : 60;
+      if (params.task === "review") {
+        return {
+          review: params.lastReview ?? "Continuing with previous review.",
+          score,
+          tokens: 0,
+          inputContext,
+          memoryContext: personalMemory,
+          modelUsed: fallback,
+          temperature,
+        };
+      }
       return {
-        review: params.lastReview ?? "Continuing with previous review.",
+        code: params.currentCode ?? "",
         score,
         tokens: 0,
         inputContext,
+        memoryContext: personalMemory,
         modelUsed: fallback,
         temperature,
       };
     }
-    return {
-      code: params.currentCode ?? "",
-      score,
-      tokens: 0,
-      inputContext,
-      modelUsed: fallback,
-      temperature,
-    };
+
+    params.onRetry?.("Something went wrong — retrying automatically");
+    try {
+      return await invoke();
+    } catch (secondErr) {
+      if (!isRetriableProviderError(secondErr)) {
+        const score = params.task === "review" ? 70 : 60;
+        if (params.task === "review") {
+          return {
+            review: params.lastReview ?? "Continuing with previous review.",
+            score,
+            tokens: 0,
+            inputContext,
+            memoryContext: personalMemory,
+            modelUsed: fallback,
+            temperature,
+          };
+        }
+        return {
+          code: params.currentCode ?? "",
+          score,
+          tokens: 0,
+          inputContext,
+          memoryContext: personalMemory,
+          modelUsed: fallback,
+          temperature,
+        };
+      }
+
+      params.onRetry?.("Retrying with simplified context...");
+      if (params.simplified) {
+        const score = params.task === "review" ? 70 : 60;
+        if (params.task === "review") {
+          return {
+            review: params.lastReview ?? "Continuing with previous review.",
+            score,
+            tokens: 0,
+            inputContext,
+            memoryContext: personalMemory,
+            modelUsed: fallback,
+            temperature,
+          };
+        }
+        return {
+          code: params.currentCode ?? "",
+          score,
+          tokens: 0,
+          inputContext,
+          memoryContext: personalMemory,
+          modelUsed: fallback,
+          temperature,
+        };
+      }
+      return callFileTask({
+        ...params,
+        simplified: true,
+        onRetry: params.onRetry,
+      });
+    }
   }
 }
 

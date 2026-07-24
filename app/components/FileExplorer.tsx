@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
-import { meetsQualityThreshold } from "@/app/lib/agentTypes";
+import { isFileTrulyComplete } from "@/app/lib/fileScoring";
+import FileBadges from "./loop/FileBadges";
 import {
   buildFileTree,
   shouldExpandFolder,
@@ -18,7 +19,15 @@ type FileExplorerProps = {
   onSelectFile: (file: ExplorerFile) => void;
 };
 
-function StatusDot({ status, score }: { status: ExplorerFile["status"]; score: number }) {
+function StatusDot({
+  status,
+  score,
+  runtimeVerified,
+}: {
+  status: ExplorerFile["status"];
+  score: number;
+  runtimeVerified?: boolean;
+}) {
   if (status === "building") {
     return (
       <span className="relative flex h-2 w-2 shrink-0">
@@ -27,8 +36,11 @@ function StatusDot({ status, score }: { status: ExplorerFile["status"]; score: n
       </span>
     );
   }
-  if (status === "done" && meetsQualityThreshold(score)) {
+  if (status === "done" && runtimeVerified) {
     return <span className="h-2 w-2 shrink-0 rounded-full bg-accent-green" title="Done" />;
+  }
+  if (status === "needs_fix" || status === "best_effort") {
+    return <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" title={status} />;
   }
   if (status === "error") {
     return <span className="h-2 w-2 shrink-0 rounded-full bg-red-400" title="Error" />;
@@ -50,8 +62,11 @@ function fileRowClass(file: ExplorerFile, selected: boolean): string {
   if (file.status === "building") {
     return `${base} border-l-2 border-transparent text-accent hover:bg-accent/10`;
   }
-  if (file.status === "done" && meetsQualityThreshold(file.score)) {
+  if (file.status === "done" && isFileTrulyComplete(file)) {
     return `${base} border-l-2 border-transparent text-gray-200 hover:bg-surface-border/40`;
+  }
+  if (file.status === "needs_fix" || file.status === "best_effort") {
+    return `${base} border-l-2 border-transparent text-amber-300 hover:bg-amber-500/10`;
   }
   if (file.status === "error") {
     return `${base} border-l-2 border-transparent text-red-400 hover:bg-red-500/10`;
@@ -203,18 +218,16 @@ function TreeNodeRow({
     >
       <FileIcon filePath={file!.file_path} />
       <span className="min-w-0 flex-1 truncate">{file!.file_name}</span>
-      <StatusDot status={file!.status} score={file!.score} />
-      {(file!.status === "done" || file!.status === "building") && file!.score > 0 && (
-        <span
-          className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-semibold tabular-nums ${
-            meetsQualityThreshold(file!.score)
-              ? "bg-accent-green/15 text-accent-green"
-              : "bg-amber-500/15 text-amber-400"
-          }`}
-        >
-          {file!.score}%
-        </span>
-      )}
+      <StatusDot
+        status={file!.status}
+        score={file!.score}
+        runtimeVerified={file!.runtime_verified}
+      />
+      {(file!.status === "done" ||
+        file!.status === "building" ||
+        file!.status === "needs_fix" ||
+        file!.status === "best_effort") &&
+        file!.score > 0 && <FileBadges file={file!} compact />}
     </button>
   );
 }

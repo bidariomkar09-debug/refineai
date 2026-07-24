@@ -42,7 +42,15 @@ export type FileStatus =
   | "building"
   | "done"
   | "error"
-  | "skipped";
+  | "skipped"
+  | "needs_fix"
+  | "best_effort";
+
+export type BuildCheckpoint = {
+  currentFileId?: string;
+  completedFileIds?: string[];
+  buildStartedAt?: string;
+};
 
 export type ProjectStatus =
   | "planning"
@@ -110,6 +118,7 @@ export type DbProject = {
   tech_stack: TechStack | Record<string, string>;
   plan: ProjectPlan | Record<string, unknown>;
   status: ProjectStatus;
+  build_checkpoint?: BuildCheckpoint | Record<string, unknown>;
   created_at: string;
 };
 
@@ -121,6 +130,9 @@ export type DbFile = {
   content: string | null;
   status: FileStatus;
   score: number;
+  ai_score?: number;
+  runtime_verified?: boolean;
+  runtime_errors?: string[];
   rounds_taken: number;
   sort_order: number;
   created_at: string;
@@ -134,6 +146,8 @@ export type DbFileRound = {
   review: string | null;
   score: number;
   task: FileTask;
+  input_context?: string | null;
+  memory_context?: string | null;
   created_at: string;
 };
 
@@ -145,6 +159,7 @@ export type FileRoundEvent = {
   review?: string;
   critique?: string;
   inputContext: string;
+  memoryContext?: string;
   modelUsed: string;
   scoreBefore: number;
   scoreImprovement: number;
@@ -169,11 +184,21 @@ export function meetsQualityThreshold(score: number): boolean {
 }
 
 export type SSEEvent =
-  | { type: "status"; message: string }
+  | { type: "status"; message: string; retry?: boolean }
+  | { type: "retry"; message: string }
   | { type: "plan"; data: ProjectPlan; projectId: string }
   | { type: "round"; data: FileRoundEvent }
   | { type: "file_start"; filePath: string; fileName: string }
-  | { type: "file_complete"; fileId: string; score: number; trainingExamples?: number }
+  | {
+      type: "file_complete";
+      fileId: string;
+      score: number;
+      aiScore?: number;
+      status?: FileStatus;
+      runtimeVerified?: boolean;
+      runtimeErrors?: string[];
+      trainingExamples?: number;
+    }
   | { type: "complete"; data: BuildCompleteEvent }
   | { type: "summary"; data: ProjectPlan & { projectId: string } }
   | { type: "error"; message: string }

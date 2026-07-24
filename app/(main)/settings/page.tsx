@@ -16,6 +16,7 @@ type SettingsForm = {
   max_rounds: number;
   temperature: number;
   theme: "dark" | "light";
+  developer_mode: boolean;
 };
 
 export default function SettingsPage() {
@@ -27,6 +28,7 @@ export default function SettingsPage() {
     max_rounds: 8,
     temperature: 0.7,
     theme: "dark",
+    developer_mode: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -48,6 +50,7 @@ export default function SettingsPage() {
               max_rounds: s.max_rounds,
               temperature: s.temperature,
               theme: s.theme,
+              developer_mode: Boolean(s.developer_mode),
             });
             setTheme(s.theme);
           }
@@ -78,6 +81,7 @@ export default function SettingsPage() {
           max_rounds: data.settings.max_rounds,
           temperature: data.settings.temperature,
           theme: data.settings.theme,
+          developer_mode: Boolean(data.settings.developer_mode),
         });
         setTheme(data.settings.theme);
         setSaved(true);
@@ -235,15 +239,41 @@ export default function SettingsPage() {
           <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-gray-400">
             Appearance
           </h2>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-300">Theme</span>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="rounded-lg border border-white/10 px-4 py-2 text-sm text-white hover:border-indigo-500"
-            >
-              {theme === "dark" ? "Dark mode" : "Light mode"} — tap to switch
-            </button>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-300">Theme</span>
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="rounded-lg border border-white/10 px-4 py-2 text-sm text-white hover:border-indigo-500"
+              >
+                {theme === "dark" ? "Dark mode" : "Light mode"} — tap to switch
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-300">Developer mode</p>
+                <p className="text-xs text-gray-500">Show memory injection debug in workspace</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={form.developer_mode}
+                onClick={() =>
+                  setForm((f) => ({ ...f, developer_mode: !f.developer_mode }))
+                }
+                className={`relative h-6 w-11 rounded-full transition ${
+                  form.developer_mode ? "bg-indigo-500" : "bg-white/20"
+                }`}
+                data-testid="developer-mode-toggle"
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition ${
+                    form.developer_mode ? "translate-x-5" : ""
+                  }`}
+                />
+              </button>
+            </div>
           </div>
         </section>
 

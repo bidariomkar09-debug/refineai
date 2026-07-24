@@ -1,5 +1,6 @@
 import {
   FILE_ABSOLUTE_MAX_ROUNDS,
+  FILE_MAX_ROUNDS,
   FILE_SCORE_THRESHOLD,
   type FileRoundEvent,
   type FileTask,
@@ -18,6 +19,7 @@ export type FileLoopContext = {
 export type FileLoopCallbacks = {
   onRound: (event: FileRoundEvent) => void | Promise<void>;
   onStatus?: (message: string) => void;
+  onRetry?: (message: string) => void;
 };
 
 export type FileLoopResult = {
@@ -25,6 +27,8 @@ export type FileLoopResult = {
   score: number;
   roundsTaken: number;
   totalTokens: number;
+  bestEffort?: boolean;
+  memoryContext?: string;
 };
 
 export async function runFileLoop(
@@ -38,6 +42,7 @@ export async function runFileLoop(
   let previousScore = 0;
   let round = 1;
   let totalTokens = 0;
+  let lastMemoryContext = "";
 
   const runTask = async (task: FileTask): Promise<void> => {
     if (signal?.aborted) throw new Error("aborted");
@@ -55,11 +60,13 @@ export async function runFileLoop(
       lastReview: lastReview || undefined,
       round,
       modelOverride: FAST_BUILD_MODEL,
+      onRetry: callbacks.onRetry,
     });
 
     totalTokens += result.tokens;
     previousScore = score;
     score = result.score;
+    if (result.memoryContext) lastMemoryContext = result.memoryContext;
 
     if (task === "review") {
       lastReview = result.review ?? "";
@@ -70,6 +77,7 @@ export async function runFileLoop(
         review: lastReview,
         code: currentCode,
         inputContext: result.inputContext,
+        memoryContext: result.memoryContext,
         modelUsed: result.modelUsed,
         scoreBefore,
         scoreImprovement: score - scoreBefore,
@@ -87,6 +95,7 @@ export async function runFileLoop(
         code: currentCode,
         critique: task === "refine" ? lastReview || undefined : undefined,
         inputContext: result.inputContext,
+        memoryContext: result.memoryContext,
         modelUsed: result.modelUsed,
         scoreBefore,
         scoreImprovement: score - scoreBefore,
@@ -137,7 +146,27 @@ export async function runFileLoop(
     score = Math.max(score, FILE_SCORE_THRESHOLD);
   }
 
-  return { content: currentCode, score, roundsTaken: round, totalTokens };
+  const maxRoundsReached = round >= FILE_MAX_ROUNDS;
+  const belowThreshold = score < FILE_SCORE_THRESHOLD || !syntax.valid;
+
+  if (maxRoundsReached && belowThreshold) {
+    return {
+      content: currentCode,
+      score,
+      roundsTaken: round,
+      totalTokens,
+      bestEffort: true,
+      memoryContext: lastMemoryContext || undefined,
+    };
+  }
+
+  return {
+    content: currentCode,
+    score,
+    roundsTaken: round,
+    totalTokens,
+    memoryContext: lastMemoryContext || undefined,
+  };
 }
 
 export function checkSyntax(code: string): { valid: boolean; issues: string[] } {

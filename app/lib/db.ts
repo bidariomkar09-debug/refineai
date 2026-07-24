@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import type {
   ChatMode,
+  BuildCheckpoint,
   DbFile,
   DbFileRound,
   DbMessage,
@@ -201,13 +202,41 @@ export async function completeFile(
   score: number,
   roundsTaken: number
 ): Promise<void> {
+  await finalizeFileResult(id, {
+    content,
+    aiScore: score,
+    displayScore: score,
+    status: "done",
+    runtimeVerified: false,
+    runtimeErrors: [],
+    roundsTaken,
+  });
+}
+
+export type FinalizeFileResultInput = {
+  content: string;
+  aiScore: number;
+  displayScore: number;
+  status: FileStatus;
+  runtimeVerified: boolean;
+  runtimeErrors: string[];
+  roundsTaken: number;
+};
+
+export async function finalizeFileResult(
+  id: string,
+  input: FinalizeFileResultInput
+): Promise<void> {
   const { error } = await getClient()
     .from("files")
     .update({
-      content,
-      score,
-      rounds_taken: roundsTaken,
-      status: "done",
+      content: input.content,
+      score: input.displayScore,
+      ai_score: input.aiScore,
+      runtime_verified: input.runtimeVerified,
+      runtime_errors: input.runtimeErrors,
+      rounds_taken: input.roundsTaken,
+      status: input.status,
     })
     .eq("id", id);
   if (error) throw new DbError(error.message);
@@ -219,17 +248,53 @@ export async function saveFileRound(
   task: FileTask,
   score: number,
   code?: string,
-  review?: string
+  review?: string,
+  inputContext?: string,
+  memoryContext?: string
 ): Promise<void> {
-  const { error } = await getClient().from("file_rounds").insert({
+  const row: Record<string, unknown> = {
     file_id: fileId,
     round_number: round,
     task,
     score,
     code: code ?? null,
     review: review ?? null,
-  });
+  };
+  if (inputContext !== undefined) row.input_context = inputContext;
+  if (memoryContext !== undefined) row.memory_context = memoryContext;
+
+  const { error } = await getClient().from("file_rounds").insert(row);
   if (error) throw new DbError(error.message);
+}
+
+export async function getFileRounds(fileId: string): Promise<DbFileRound[]> {
+  const { data, error } = await getClient()
+    .from("file_rounds")
+    .select("*")
+    .eq("file_id", fileId)
+    .order("round_number", { ascending: true });
+  if (error) throw new DbError(error.message);
+  return (data ?? []) as DbFileRound[];
+}
+
+export async function updateBuildCheckpoint(
+  projectId: string,
+  checkpoint: BuildCheckpoint
+): Promise<void> {
+  const { error } = await getClient()
+    .from("projects")
+    .update({ build_checkpoint: checkpoint })
+    .eq("id", projectId);
+  if (error?.message?.includes("build_checkpoint")) return;
+  if (error) throw new DbError(error.message);
+}
+
+export async function getBuildCheckpoint(projectId: string): Promise<BuildCheckpoint> {
+  const project = await getProject(projectId);
+  if (!project?.build_checkpoint || typeof project.build_checkpoint !== "object") {
+    return {};
+  }
+  return project.build_checkpoint as BuildCheckpoint;
 }
 
 export async function createProjectShell(
@@ -367,6 +432,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   max_rounds: 8,
   temperature: 0.7,
   theme: "dark",
+  developer_mode: false,
   dogfood_log: [],
   updated_at: new Date().toISOString(),
 };
@@ -483,27 +549,49 @@ export async function deleteProject(id: string): Promise<void> {
 }
 
 async function getProjectStatsMap(): Promise<
-  Map<string, { fileCount: number; doneCount: number; avgScore: number }>
+  Map<string, { fileCount: number; doneCount: number; avgScore: number; verifiedAvgScore: number }>
 > {
-  const { data, error } = await getClient().from("files").select("project_id, status, score");
+  const { data, error } = await getClient()
+    .from("files")
+    .select("project_id, status, score, runtime_verified");
   if (error) throw new DbError(error.message);
-  const map = new Map<string, { fileCount: number; doneCount: number; totalScore: number }>();
+  const map = new Map<
+    string,
+    { fileCount: number; doneCount: number; totalScore: number; verifiedTotal: number; verifiedCount: number }
+  >();
   for (const row of data ?? []) {
     const pid = row.project_id as string;
-    const entry = map.get(pid) ?? { fileCount: 0, doneCount: 0, totalScore: 0 };
+    const entry = map.get(pid) ?? {
+      fileCount: 0,
+      doneCount: 0,
+      totalScore: 0,
+      verifiedTotal: 0,
+      verifiedCount: 0,
+    };
     entry.fileCount += 1;
     if (row.status === "done") {
       entry.doneCount += 1;
       entry.totalScore += row.score ?? 0;
+      if (row.runtime_verified === true) {
+        entry.verifiedCount += 1;
+        entry.verifiedTotal += row.score ?? 0;
+      }
     }
     map.set(pid, entry);
   }
-  const result = new Map<string, { fileCount: number; doneCount: number; avgScore: number }>();
+  const result = new Map<
+    string,
+    { fileCount: number; doneCount: number; avgScore: number; verifiedAvgScore: number }
+  >();
   for (const [pid, entry] of Array.from(map.entries())) {
     result.set(pid, {
       fileCount: entry.fileCount,
       doneCount: entry.doneCount,
       avgScore: entry.doneCount > 0 ? Math.round(entry.totalScore / entry.doneCount) : 0,
+      verifiedAvgScore:
+        entry.verifiedCount > 0
+          ? Math.round(entry.verifiedTotal / entry.verifiedCount)
+          : 0,
     });
   }
   return result;
@@ -537,12 +625,23 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   const { data: doneFiles } = await getClient()
     .from("files")
-    .select("score")
+    .select("score, runtime_verified")
     .eq("status", "done");
 
   const scores = (doneFiles ?? []).map((f) => f.score as number).filter((s) => s > 0);
   const averageScore =
     scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+
+  const verifiedFiles = (doneFiles ?? []).filter((f) => f.runtime_verified === true);
+  const verifiedScores = verifiedFiles
+    .map((f) => f.score as number)
+    .filter((s) => s > 0);
+  const verifiedAverageScore =
+    verifiedScores.length > 0
+      ? Math.round(verifiedScores.reduce((a, b) => a + b, 0) / verifiedScores.length)
+      : 0;
+  const verifiedFileCount = verifiedFiles.length;
+  const unverifiedFileCount = (doneFiles ?? []).length - verifiedFileCount;
 
   const { count: loopCount } = await getClient()
     .from("file_rounds")
@@ -579,6 +678,9 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     totalProjects: projects.length,
     totalFiles: fileCount ?? 0,
     averageScore,
+    verifiedAverageScore,
+    verifiedFileCount,
+    unverifiedFileCount,
     totalLoops: loopCount ?? 0,
     recentProjects,
     activity,

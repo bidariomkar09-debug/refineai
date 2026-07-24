@@ -35,13 +35,9 @@ function SandpackErrorOverlay() {
   );
 }
 
-function SandpackFrameWithErrors({
-  viewport,
-}: {
-  viewport: "desktop" | "mobile";
-}) {
+function SandpackFrameWithErrors() {
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full w-full min-h-[320px]">
       <SandpackErrorOverlay />
       <SandpackFrame
         style={{ height: "100%", minHeight: "100%", width: "100%" }}
@@ -64,9 +60,10 @@ export default function SandpackPreviewPanel({
 
   return (
     <div
-      className={`relative mx-auto h-full overflow-hidden rounded-lg border border-surface-border bg-white ${
+      className={`relative mx-auto h-full min-h-[320px] overflow-hidden rounded-lg border border-surface-border bg-white ${
         viewport === "mobile" ? "max-w-[375px]" : "w-full"
       }`}
+      data-testid="sandpack-preview-panel"
     >
       <SandpackProvider
         template={sandpackTemplate}
@@ -84,9 +81,10 @@ export default function SandpackPreviewPanel({
           externalResources: ["https://cdn.tailwindcss.com"],
           recompileMode: "immediate",
           recompileDelay: 300,
+          activeFile: entry,
         }}
       >
-        <SandpackFrameWithErrors viewport={viewport} />
+        <SandpackFrameWithErrors />
       </SandpackProvider>
     </div>
   );

@@ -19,7 +19,7 @@ import { createSSEStream, sseResponse } from "@/app/lib/streamClient";
 import { getRevisionIntro } from "@/app/lib/planPresentation";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
 import type { ProjectPlan } from "@/app/lib/agentTypes";
-import { meetsQualityThreshold } from "@/app/lib/agentTypes";
+import { isFileTrulyComplete, isProjectBuildComplete } from "@/app/lib/fileScoring";
 
 export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
@@ -124,13 +124,14 @@ export async function PATCH(request: NextRequest) {
     if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const files = await getProjectFiles(projectId);
-    const belowThreshold = files.filter(
-      (f) =>
-        f.status !== "skipped" &&
-        (f.status !== "done" || !meetsQualityThreshold(f.score))
-    );
 
-    if (belowThreshold.length > 0) {
+    if (!isProjectBuildComplete(files)) {
+      const belowThreshold = files.filter(
+        (f) =>
+          f.status !== "skipped" &&
+          f.status !== "best_effort" &&
+          !isFileTrulyComplete(f)
+      );
       return NextResponse.json(
         {
           error: "Quality threshold not met",
@@ -139,6 +140,7 @@ export async function PATCH(request: NextRequest) {
             path: f.file_path,
             score: f.score,
             status: f.status,
+            runtime_verified: f.runtime_verified,
           })),
         },
         { status: 409 }

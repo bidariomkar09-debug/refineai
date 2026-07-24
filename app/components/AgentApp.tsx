@@ -12,7 +12,8 @@ import type {
   ProjectPlan,
 } from "@/app/lib/agentTypes";
 import { fetchStream } from "@/app/lib/streamClient";
-import { meetsQualityThreshold } from "@/app/lib/agentTypes";
+import ToastStack, { useToastStack } from "./shell/ToastStack";
+import { isFileTrulyComplete } from "@/app/lib/fileScoring";
 import { getStoredMode, setStoredMode, isValidChatMode } from "@/app/lib/chatModes";
 import { startBuild, runQualityPass, type OrchestratorControls } from "@/app/lib/buildOrchestrator";
 import {
@@ -118,6 +119,12 @@ export default function AgentApp({
 
   useEffect(() => {
     setChatMode(getStoredMode());
+    fetch("/api/settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.settings?.developer_mode) setDeveloperMode(true);
+      })
+      .catch(() => {});
   }, []);
 
   const handleModeChange = useCallback((mode: ChatMode) => {
@@ -180,6 +187,13 @@ export default function AgentApp({
   const [isComposerActive, setIsComposerActive] = useState(false);
   const [previewVerified, setPreviewVerified] = useState(false);
   const [buildTrainingExamples, setBuildTrainingExamples] = useState(0);
+  const [developerMode, setDeveloperMode] = useState(false);
+  const [showResumeBuild, setShowResumeBuild] = useState(false);
+  const [memoryRounds, setMemoryRounds] = useState<
+    Array<Pick<FileRoundEvent, "round" | "memoryContext">>
+  >([]);
+  const [latestMemory, setLatestMemory] = useState<string | null>(null);
+  const { toasts, pushToast, dismissToast } = useToastStack();
 
   const buildAbortRef = useRef<AbortController | null>(null);
   const controlsRef = useRef<OrchestratorControls | null>(null);
@@ -334,7 +348,9 @@ export default function AgentApp({
       const bundle = buildSandpackFiles(projectFiles);
       if (!bundle) {
         setPreviewStatus("error");
+        setCenterTab("preview");
         appendBuildMessage(USER_MESSAGES.previewError);
+        pushToast("Preview failed — no buildable files found", false);
         return false;
       }
 
@@ -349,9 +365,11 @@ export default function AgentApp({
       wasPreviewRunningRef.current = true;
       appendBuildMessage(USER_MESSAGES.previewReady);
       setCenterTab("preview");
+      setTerminalOpen(false);
+      pushToast("Preview is live — check the Preview tab", false);
       return true;
     },
-    [appendBuildMessage, projectId, refreshFiles]
+    [appendBuildMessage, projectId, refreshFiles, pushToast]
   );
 
   const handleRunApp = useCallback(async () => {
@@ -359,13 +377,13 @@ export default function AgentApp({
     setIsPreviewStarting(true);
     setPreviewStatus("installing");
     setPreviewLogs([]);
-    setTerminalOpen(true);
     setCenterTab("preview");
     appendBuildMessage(USER_MESSAGES.startingApp);
 
     try {
       const projectFiles = await refreshFiles(projectId);
 
+      // Prefer Sandpack on hosted deploys; also fallback when localhost preview is unavailable
       if (canUseSandpackPreview()) {
         await startSandpackPreview(projectFiles ?? files);
         return;
@@ -385,10 +403,12 @@ export default function AgentApp({
       if (!response.ok || !response.body) {
         if (await startSandpackPreview(projectFiles ?? files)) return;
         setPreviewStatus("error");
+        pushToast("Could not start preview", false);
         return;
       }
 
       setPreviewMode("localhost");
+      setTerminalOpen(true);
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -435,6 +455,7 @@ export default function AgentApp({
                 setCenterTab("preview");
               } else if (st.status === "error") {
                 appendBuildMessage(USER_MESSAGES.previewError);
+                pushToast("Preview failed to start", false);
               }
             }
           } catch {
@@ -447,10 +468,11 @@ export default function AgentApp({
       if (await startSandpackPreview(fallbackFiles)) return;
       setPreviewStatus("error");
       appendBuildMessage(USER_MESSAGES.previewError);
+      pushToast("Preview failed to start", false);
     } finally {
       setIsPreviewStarting(false);
     }
-  }, [projectId, files, refreshFiles, appendBuildMessage, startSandpackPreview]);
+  }, [projectId, files, refreshFiles, appendBuildMessage, startSandpackPreview, pushToast]);
 
   const handlePreviewRefresh = useCallback(async () => {
     if (previewMode === "sandpack" && projectId) {
@@ -612,7 +634,7 @@ export default function AgentApp({
 
       if (project.status === "complete") {
         const needsQuality = loadedFiles.some(
-          (f) => f.status === "done" && !meetsQualityThreshold(f.score)
+          (f) => f.status === "done" && !isFileTrulyComplete(f)
         );
 
         if (needsQuality) {
@@ -676,6 +698,15 @@ export default function AgentApp({
       } else if (project.status === "building") {
         setPhase("building");
         setShowConfirm(false);
+        const checkpoint = data.project?.build_checkpoint as
+          | { completedFileIds?: string[] }
+          | undefined;
+        const hasProgress =
+          (checkpoint?.completedFileIds?.length ?? 0) > 0 ||
+          loadedFiles.some((f) =>
+            ["done", "needs_fix", "best_effort", "building"].includes(f.status)
+          );
+        setShowResumeBuild(hasProgress);
       } else {
         setPhase("awaiting_confirm");
         setShowConfirm(true);
@@ -1170,6 +1201,9 @@ export default function AgentApp({
     setGoalMetFlash(false);
     setPreviewVerified(false);
     setBuildTrainingExamples(0);
+    setMemoryRounds([]);
+    setLatestMemory(null);
+    setShowResumeBuild(false);
 
     appendBuildMessage(USER_MESSAGES.building);
 
@@ -1210,6 +1244,13 @@ export default function AgentApp({
           const round = event.data;
           setCurrentRound(round);
           trackLoopRound(fileId, round);
+          if (round.memoryContext) {
+            setLatestMemory(round.memoryContext);
+            setMemoryRounds((prev) => [
+              ...prev.filter((r) => r.round !== round.round),
+              { round: round.round, memoryContext: round.memoryContext },
+            ]);
+          }
           if (round.code) {
             setCurrentCode(round.code);
             if (
@@ -1223,14 +1264,20 @@ export default function AgentApp({
             prev ? { ...prev, round } : null
           );
         },
-        onFileComplete: (fileId, score, trainingExamples) => {
+        onFileComplete: (fileId, score, trainingExamples, meta) => {
           if (trainingExamples) {
             setBuildTrainingExamples((n) => n + trainingExamples);
           }
           activeFileIdRef.current = null;
           setActiveFile(null);
           setFiles((prev) =>
-            updateFileInList(prev, fileId, { status: "done", score })
+            updateFileInList(prev, fileId, {
+              status: meta?.status ?? "done",
+              score,
+              ai_score: meta?.aiScore ?? score,
+              runtime_verified: meta?.runtimeVerified ?? false,
+              runtime_errors: meta?.runtimeErrors,
+            })
           );
           refreshFiles(projectId).then((updated) => {
             const completed = updated?.find((f) => f.id === fileId);
@@ -1244,6 +1291,7 @@ export default function AgentApp({
             }
           });
         },
+        onRetry: (message) => pushToast(message, true),
         onComplete: (finalPlan) => {
           setSummaryPlan(finalPlan);
           setPhase("complete");
@@ -1254,13 +1302,13 @@ export default function AgentApp({
           setActiveFile(null);
           setCenterTab("preview");
           refreshFiles(projectId).then((updated) => {
-            const done = (updated ?? []).filter((f) => f.status === "done");
+            const verified = (updated ?? []).filter((f) => isFileTrulyComplete(f));
             const avgScore =
-              done.length > 0
-                ? Math.round(done.reduce((s, f) => s + f.score, 0) / done.length)
+              verified.length > 0
+                ? Math.round(verified.reduce((s, f) => s + f.score, 0) / verified.length)
                 : 0;
             appendBuildMessage(
-              completionMessage(finalPlan.name, done.length, avgScore)
+              completionMessage(finalPlan.name, verified.length, avgScore)
             );
           });
           loadProjects();
@@ -1288,7 +1336,84 @@ export default function AgentApp({
     appendBuildMessage,
     trackLoopRound,
     handleRunApp,
+    pushToast,
   ]);
+
+  const handleResumeBuild = useCallback(async () => {
+    if (!projectId || !plan) return;
+    const res = await fetch("/api/projects/resume-build", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const remainingIds = new Set((data.remainingFileIds ?? []) as string[]);
+    const currentFiles = await refreshFiles(projectId);
+    const filesToBuild =
+      remainingIds.size > 0
+        ? currentFiles.filter((f) => remainingIds.has(f.id))
+        : currentFiles.filter(
+            (f) =>
+              f.status !== "skipped" &&
+              f.status !== "done" &&
+              f.status !== "best_effort"
+          );
+    if (filesToBuild.length === 0) {
+      setShowResumeBuild(false);
+      return;
+    }
+    setShowResumeBuild(false);
+    setPhase("building");
+    setBuildStartedAt(Date.now());
+    buildAbortRef.current = new AbortController();
+    controlsRef.current = startBuild(
+      projectId,
+      filesToBuild,
+      {
+        onStatus: setStatusMessage,
+        onFileStart: (file) => {
+          activeFileIdRef.current = file.id;
+          setActiveFile(file);
+          setSelectedFileId(file.id);
+          setFiles((prev) =>
+            syncFileIntoList(prev, { ...file, status: "building" })
+          );
+        },
+        onRound: (fileId, event) => {
+          const round = event.data;
+          setCurrentRound(round);
+          trackLoopRound(fileId, round);
+          if (round.memoryContext) {
+            setLatestMemory(round.memoryContext);
+          }
+        },
+        onFileComplete: (fileId, score, trainingExamples, meta) => {
+          setFiles((prev) =>
+            updateFileInList(prev, fileId, {
+              status: meta?.status ?? "done",
+              score,
+              ai_score: meta?.aiScore ?? score,
+              runtime_verified: meta?.runtimeVerified ?? false,
+            })
+          );
+          if (trainingExamples) {
+            setBuildTrainingExamples((n) => n + trainingExamples);
+          }
+        },
+        onRetry: (message) => pushToast(message, true),
+        onComplete: (finalPlan) => {
+          setSummaryPlan(finalPlan);
+          setPhase("complete");
+          setBuildEndedAt(Date.now());
+          setStatusMessage("");
+          loadProjects();
+        },
+        onPreviewVerified: setPreviewVerified,
+      },
+      buildAbortRef.current.signal
+    );
+  }, [projectId, plan, refreshFiles, trackLoopRound, loadProjects, pushToast]);
 
   const handlePlanApprove = useCallback(async () => {
     if (!projectId || !plan) return;
@@ -1495,6 +1620,11 @@ export default function AgentApp({
             originalPrompt={originalPrompt}
             projectId={projectId}
             trainingExamplesAdded={buildTrainingExamples}
+            developerMode={developerMode}
+            latestMemory={latestMemory}
+            memoryRounds={memoryRounds}
+            showResumeBuild={showResumeBuild}
+            onResumeBuild={handleResumeBuild}
           />
 
           <div className="min-h-0 max-h-[35vh] shrink-0 overflow-y-auto border-t border-surface-border lg:hidden">
@@ -1643,6 +1773,7 @@ export default function AgentApp({
         </div>
         </div>
       </SlideDrawer>
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

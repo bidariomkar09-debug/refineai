@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
 import { getTemperature, modelUsedLabel, selectModelForRequest } from "@/app/lib/agentAI";
 import {
-  completeFile,
   createTrainingSession,
+  finalizeFileResult,
   finalizeTrainingData,
+  getBuildCheckpoint,
   getCompletedFilesContext,
   getFile,
   getMessages,
@@ -11,10 +12,13 @@ import {
   getProjectFiles,
   saveFileRound,
   saveTrainingData,
+  updateBuildCheckpoint,
   updateFileStatus,
 } from "@/app/lib/db";
+import { resolveFileOutcome } from "@/app/lib/fileScoring";
 import { runFileLoop, checkSyntax } from "@/app/lib/fileLoopEngine";
 import { validateFileImports } from "@/app/lib/importGraph";
+import { verifyFileRuntime } from "@/app/lib/runtimeVerify";
 import { createSSEStream, sseResponse } from "@/app/lib/streamClient";
 import {
   detectFileType,
@@ -23,6 +27,7 @@ import {
 } from "@/app/lib/trainingTags";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
 import {
+  FILE_MAX_ROUNDS,
   FILE_SCORE_THRESHOLD,
   type ProjectPlan,
 } from "@/app/lib/agentTypes";
@@ -64,6 +69,13 @@ export async function POST(request: NextRequest) {
     });
 
     await updateFileStatus(fileId, "building");
+
+    const checkpoint = await getBuildCheckpoint(projectId);
+    await updateBuildCheckpoint(projectId, {
+      ...checkpoint,
+      currentFileId: fileId,
+      buildStartedAt: checkpoint.buildStartedAt ?? new Date().toISOString(),
+    });
 
     const completedFiles = await getCompletedFilesContext(projectId);
     const messages = await getMessages(projectId);
@@ -135,8 +147,16 @@ export async function POST(request: NextRequest) {
               event.task,
               event.score,
               event.code,
-              event.review
+              event.review,
+              event.inputContext,
+              event.memoryContext
             );
+
+            await updateBuildCheckpoint(projectId, {
+              currentFileId: fileId,
+              completedFileIds: checkpoint.completedFileIds ?? [],
+              buildStartedAt: checkpoint.buildStartedAt ?? new Date().toISOString(),
+            });
 
             if (event.round === 1 && event.task === "write") {
               startScore = event.scoreBefore;
@@ -176,19 +196,23 @@ export async function POST(request: NextRequest) {
               .catch(() => {});
           },
           onStatus: (msg) => send({ type: "status", message: msg }),
+          onRetry: (msg) => {
+            send({ type: "retry", message: msg });
+            send({ type: "status", message: msg, retry: true });
+          },
         }
       );
 
       const syntax = checkSyntax(result.content);
       const finalContent = result.content;
-      const finalScore = result.score;
+      const aiScore = result.score;
 
       const allProjectFiles = await getProjectFiles(projectId);
       const projectFileMap: Record<string, string> = {};
       for (const f of allProjectFiles) {
-        if (f.status === "done" && f.content) {
+        if ((f.status === "done" || f.id === fileId) && (f.id === fileId ? finalContent : f.content)) {
           const p = f.file_path.startsWith("/") ? f.file_path : `/${f.file_path}`;
-          projectFileMap[p] = f.content;
+          projectFileMap[p] = f.id === fileId ? finalContent : (f.content ?? "");
         }
       }
       const importCheck = validateFileImports(
@@ -198,39 +222,129 @@ export async function POST(request: NextRequest) {
       );
 
       const staticPass = syntax.valid && importCheck.valid;
-      const effectiveScore = staticPass
-        ? Math.max(finalScore, FILE_SCORE_THRESHOLD)
-        : finalScore;
+      const effectiveAiScore = staticPass
+        ? Math.max(aiScore, FILE_SCORE_THRESHOLD)
+        : aiScore;
 
-      if (!syntax.valid || !importCheck.valid) {
-        send({ type: "status", message: USER_MESSAGES.fixing });
+      if (result.bestEffort) {
+        const outcome = resolveFileOutcome({
+          aiScore: effectiveAiScore,
+          runtimeVerified: false,
+          maxRoundsReached: true,
+          staticPass,
+          bestEffort: true,
+        });
+
+        await finalizeTraining(
+          finalContent,
+          outcome.displayScore,
+          result.roundsTaken,
+          false
+        );
+
+        await finalizeFileResult(fileId, {
+          content: finalContent,
+          aiScore: effectiveAiScore,
+          displayScore: outcome.displayScore,
+          status: outcome.status,
+          runtimeVerified: false,
+          runtimeErrors: [],
+          roundsTaken: result.roundsTaken,
+        });
+
+        const completedIds = [...(checkpoint.completedFileIds ?? []), fileId];
+        await updateBuildCheckpoint(projectId, {
+          currentFileId: undefined,
+          completedFileIds: completedIds,
+          buildStartedAt: checkpoint.buildStartedAt,
+        });
+
+        send({
+          type: "file_complete",
+          fileId,
+          score: outcome.displayScore,
+          aiScore: effectiveAiScore,
+          status: outcome.status,
+          runtimeVerified: false,
+          trainingExamples: trainingRowIds.length,
+        });
+        send({
+          type: "complete",
+          data: {
+            score: outcome.displayScore,
+            content: finalContent,
+            roundsTaken: result.roundsTaken,
+          },
+        });
+        return;
       }
 
-      const wasSuccessful = staticPass;
-      await finalizeTraining(
-        finalContent,
-        effectiveScore,
-        result.roundsTaken,
-        wasSuccessful
-      );
-
-      if (!wasSuccessful) {
+      if (!staticPass) {
         send({ type: "status", message: USER_MESSAGES.fixing });
         await updateFileStatus(fileId, "building");
         return;
       }
 
-      await completeFile(fileId, finalContent, effectiveScore, result.roundsTaken);
+      send({ type: "status", message: "Verifying runtime..." });
+      const runtime = await verifyFileRuntime({
+        projectId,
+        file,
+        allProjectFiles,
+        content: finalContent,
+      });
+
+      const outcome = resolveFileOutcome({
+        aiScore: effectiveAiScore,
+        runtimeVerified: runtime.ok,
+        maxRoundsReached: result.roundsTaken >= FILE_MAX_ROUNDS,
+        staticPass,
+      });
+
+      const wasSuccessful = outcome.status === "done" && outcome.runtimeVerified;
+      await finalizeTraining(
+        finalContent,
+        outcome.displayScore,
+        result.roundsTaken,
+        wasSuccessful
+      );
+
+      if (outcome.status === "building") {
+        send({ type: "status", message: USER_MESSAGES.fixing });
+        await updateFileStatus(fileId, "building");
+        return;
+      }
+
+      await finalizeFileResult(fileId, {
+        content: finalContent,
+        aiScore: effectiveAiScore,
+        displayScore: outcome.displayScore,
+        status: outcome.status,
+        runtimeVerified: outcome.runtimeVerified,
+        runtimeErrors: runtime.errors,
+        roundsTaken: result.roundsTaken,
+      });
+
+      const completedIds = [...(checkpoint.completedFileIds ?? []), fileId];
+      await updateBuildCheckpoint(projectId, {
+        currentFileId: undefined,
+        completedFileIds: completedIds,
+        buildStartedAt: checkpoint.buildStartedAt,
+      });
+
       send({
         type: "file_complete",
         fileId,
-        score: effectiveScore,
+        score: outcome.displayScore,
+        aiScore: effectiveAiScore,
+        status: outcome.status,
+        runtimeVerified: outcome.runtimeVerified,
+        runtimeErrors: runtime.errors,
         trainingExamples: trainingRowIds.length,
       });
       send({
         type: "complete",
         data: {
-          score: finalScore,
+          score: outcome.displayScore,
           content: finalContent,
           roundsTaken: result.roundsTaken,
         },

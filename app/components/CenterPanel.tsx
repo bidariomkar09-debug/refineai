@@ -57,6 +57,11 @@ type CenterPanelProps = {
   originalPrompt: string;
   projectId: string | null;
   trainingExamplesAdded: number;
+  developerMode?: boolean;
+  latestMemory?: string | null;
+  memoryRounds?: Array<{ round: number; memoryContext?: string }>;
+  showResumeBuild?: boolean;
+  onResumeBuild?: () => void;
 };
 
 function TabButton({
@@ -129,10 +134,39 @@ export default function CenterPanel({
   originalPrompt,
   projectId,
   trainingExamplesAdded,
+  developerMode = false,
+  latestMemory,
+  memoryRounds,
+  showResumeBuild = false,
+  onResumeBuild,
 }: CenterPanelProps) {
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <LoopEngineeringPanel snapshot={loopSnapshot} goalMetScore={goalMetScore} />
+      <LoopEngineeringPanel
+        snapshot={loopSnapshot}
+        goalMetScore={goalMetScore}
+        developerMode={developerMode}
+        latestMemory={latestMemory}
+        memoryRounds={memoryRounds}
+      />
+
+      {showResumeBuild && onResumeBuild && (
+        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-amber-100">
+              Build paused after refresh — resume remaining files?
+            </p>
+            <button
+              type="button"
+              onClick={onResumeBuild}
+              className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-black"
+              data-testid="resume-build-button"
+            >
+              Resume build
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex shrink-0 overflow-x-auto border-b border-surface-border bg-surface-raised/50 px-2">
         <TabButton active={centerTab === "plan"} onClick={() => onTabChange("plan")}>

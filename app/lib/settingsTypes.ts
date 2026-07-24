@@ -7,6 +7,7 @@ export type UserSettings = {
   temperature: number;
   theme: "dark" | "light";
   timezone?: string;
+  developer_mode?: boolean;
   dogfood_log?: DogfoodLogEntry[];
   updated_at: string;
 };
@@ -22,6 +23,9 @@ export type DashboardStats = {
   totalProjects: number;
   totalFiles: number;
   averageScore: number;
+  verifiedAverageScore: number;
+  verifiedFileCount: number;
+  unverifiedFileCount: number;
   totalLoops: number;
   recentProjects: Array<{
     id: string;

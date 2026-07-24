@@ -1,7 +1,8 @@
 "use client";
 
 import type { DbFile, ProjectPlan } from "@/app/lib/agentTypes";
-import { meetsQualityThreshold } from "@/app/lib/agentTypes";
+import { isFileTrulyComplete } from "@/app/lib/fileScoring";
+import FileBadges from "./FileBadges";
 import { completionMessage } from "@/app/lib/userMessages";
 
 type HumanReviewPanelProps = {
@@ -20,12 +21,13 @@ export default function HumanReviewPanel({
   onRequestChanges,
 }: HumanReviewPanelProps) {
   const doneFiles = files
-    .filter((f) => f.status === "done")
+    .filter((f) => f.status === "done" || f.status === "needs_fix" || f.status === "best_effort")
     .sort((a, b) => a.file_path.localeCompare(b.file_path));
+  const verifiedFiles = doneFiles.filter((f) => isFileTrulyComplete(f));
   const avgScore =
-    doneFiles.length > 0
+    verifiedFiles.length > 0
       ? Math.round(
-          doneFiles.reduce((sum, f) => sum + f.score, 0) / doneFiles.length
+          verifiedFiles.reduce((sum, f) => sum + f.score, 0) / verifiedFiles.length
         )
       : 0;
 
@@ -66,15 +68,7 @@ export default function HumanReviewPanel({
                 <span className="min-w-0 truncate font-mono text-gray-300">
                   {file.file_path}
                 </span>
-                <span
-                  className={`shrink-0 font-semibold tabular-nums ${
-                    meetsQualityThreshold(file.score)
-                      ? "text-accent-green"
-                      : "text-amber-400"
-                  }`}
-                >
-                  {file.score}%
-                </span>
+                <FileBadges file={file} compact />
               </li>
             ))}
           </ul>

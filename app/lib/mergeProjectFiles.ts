@@ -69,7 +69,12 @@ export function syncFileIntoList(files: DbFile[], incoming: DbFile): DbFile[] {
 export function updateFileInList(
   files: DbFile[],
   fileId: string,
-  patch: Partial<Pick<DbFile, "status" | "score" | "content" | "rounds_taken">>
+  patch: Partial<
+    Pick<
+      DbFile,
+      "status" | "score" | "content" | "rounds_taken" | "ai_score" | "runtime_verified" | "runtime_errors"
+    >
+  >
 ): DbFile[] {
   return files.map((f) => (f.id === fileId ? { ...f, ...patch } : f));
 }

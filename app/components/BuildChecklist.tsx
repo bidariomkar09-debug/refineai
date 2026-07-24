@@ -1,7 +1,8 @@
 "use client";
 
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
-import { meetsQualityThreshold } from "@/app/lib/agentTypes";
+import { isFileTrulyComplete } from "@/app/lib/fileScoring";
+import FileBadges from "./loop/FileBadges";
 import FileIcon from "./FileIcon";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
 
@@ -25,7 +26,7 @@ function StatusIndicator({
       </span>
     );
   }
-  if (file.status === "done" && meetsQualityThreshold(file.score)) {
+  if (file.status === "done" && isFileTrulyComplete(file)) {
     return (
       <svg className="h-4 w-4 shrink-0 text-accent-green" viewBox="0 0 16 16" fill="currentColor">
         <path d="M6.5 11.5L3.5 8.5l1-1 2 2 5-5 1 1-6 6z" />
@@ -86,17 +87,7 @@ export default function BuildChecklist({ files, activeFileId }: BuildChecklistPr
               >
                 {file.file_path}
               </span>
-              {file.status === "done" && file.score > 0 && (
-                <span
-                  className={`shrink-0 font-semibold tabular-nums ${
-                    meetsQualityThreshold(file.score)
-                      ? "text-accent-green"
-                      : "text-amber-400"
-                  }`}
-                >
-                  {file.score}%
-                </span>
-              )}
+              {file.status === "done" && file.score > 0 && <FileBadges file={file} compact />}
               {isActive && file.status === "building" && (
                 <span className="shrink-0 text-[10px] text-accent">building</span>
               )}

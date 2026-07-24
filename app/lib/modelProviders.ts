@@ -24,6 +24,23 @@ function getDefaultModel(): string {
 export const PROVIDER_TIMEOUT_MS = 10_000;
 const OPENAI_COST_PER_1K = 0.03;
 
+export function isRetriableProviderError(err: unknown): boolean {
+  if (err instanceof ProviderError) {
+    return err.statusCode === 504 || err.statusCode === 408 || err.statusCode === 429;
+  }
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    return (
+      err.name === "AbortError" ||
+      msg.includes("abort") ||
+      msg.includes("timeout") ||
+      msg.includes("timed out") ||
+      msg.includes("504")
+    );
+  }
+  return false;
+}
+
 export function encodeApiKey(key: string): string {
   return Buffer.from(key, "utf-8").toString("base64");
 }

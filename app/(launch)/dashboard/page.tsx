@@ -71,13 +71,16 @@ export default function LaunchScreen() {
   const [cloning, setCloning] = useState(false);
   const [cloneError, setCloneError] = useState<string | null>(null);
   const [timezone, setTimezone] = useState<string | undefined>(undefined);
+  const [verifiedAvg, setVerifiedAvg] = useState<number | null>(null);
+  const [verifiedCount, setVerifiedCount] = useState(0);
 
   useEffect(() => {
     Promise.all([
       fetch("/api/projects?stats=true"),
       fetch("/api/settings"),
+      fetch("/api/stats"),
     ])
-      .then(async ([projectsRes, settingsRes]) => {
+      .then(async ([projectsRes, settingsRes, statsRes]) => {
         if (projectsRes.ok) {
           const data = await projectsRes.json();
           setProjects(data.projects ?? []);
@@ -86,6 +89,17 @@ export default function LaunchScreen() {
           const data = await settingsRes.json();
           if (data.settings?.timezone) {
             setTimezone(data.settings.timezone);
+          }
+        }
+        if (statsRes.ok) {
+          const stats = await statsRes.json();
+          if (typeof stats.verifiedAverageScore === "number") {
+            setVerifiedAvg(stats.verifiedAverageScore);
+          } else if (typeof stats.averageScore === "number") {
+            setVerifiedAvg(stats.averageScore);
+          }
+          if (typeof stats.verifiedFileCount === "number") {
+            setVerifiedCount(stats.verifiedFileCount);
           }
         }
       })
@@ -155,6 +169,23 @@ export default function LaunchScreen() {
         </div>
 
         <DailyBuildCard projects={projects} />
+
+        {verifiedAvg !== null && (
+          <div
+            className="mb-4 rounded-lg border border-white/[0.08] bg-white/[0.03] px-4 py-3"
+            data-testid="verified-quality-stats"
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+              Average Verified Quality
+            </p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
+              {verifiedAvg}%
+              <span className="ml-2 text-sm font-normal text-gray-500">
+                · {verifiedCount} verified file{verifiedCount === 1 ? "" : "s"}
+              </span>
+            </p>
+          </div>
+        )}
 
         {/* Action cards */}
         <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
