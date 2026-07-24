@@ -1,4 +1,4 @@
-const CACHE_NAME = "refineai-v1";
+const CACHE_NAME = "refineai-v2";
 const STATIC_ASSETS = ["/", "/dashboard", "/icons/icon.svg", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -15,6 +15,14 @@ self.addEventListener("activate", (event) => {
     )
   );
   self.clients.claim();
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "CLEAR_CACHE") {
+    event.waitUntil(
+      caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+    );
+  }
 });
 
 self.addEventListener("fetch", (event) => {
