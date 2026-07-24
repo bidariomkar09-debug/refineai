@@ -33,6 +33,7 @@ function mockProject(overrides: Partial<DbProject> = {}): DbProject {
         isApiRoute: false,
       },
     ],
+    apiRoutes: [],
     estimatedFiles: 1,
     estimatedMinutes: 1,
     steps: [],
