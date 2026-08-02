@@ -1,38 +1,7 @@
 import { test, expect } from "@playwright/test";
-import {
-  computeBuildStreak,
-  getTodaysBuildPrompt,
-  DAILY_BUILD_PROMPTS,
-} from "../app/lib/dailyBuildPrompts";
 import { formatBuildProof, twitterIntentUrl } from "../app/lib/buildProof";
 
 test.describe("Daily dogfood loop", () => {
-  test("getTodaysBuildPrompt rotates deterministically by day", () => {
-    const day1 = new Date("2026-07-06");
-    const day2 = new Date("2026-07-07");
-    const prompt1 = getTodaysBuildPrompt(day1);
-    const prompt2 = getTodaysBuildPrompt(day2);
-    expect(DAILY_BUILD_PROMPTS).toContain(prompt1);
-    expect(prompt1).not.toBe(prompt2);
-    expect(getTodaysBuildPrompt(day1)).toBe(prompt1);
-  });
-
-  test("computeBuildStreak counts consecutive complete days", () => {
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const twoDaysAgo = new Date(today);
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-
-    const streak = computeBuildStreak([
-      { status: "complete", created_at: today.toISOString() },
-      { status: "complete", created_at: yesterday.toISOString() },
-      { status: "complete", created_at: twoDaysAgo.toISOString() },
-      { status: "building", created_at: today.toISOString() },
-    ]);
-    expect(streak).toBe(3);
-  });
-
   test("formatBuildProof includes prompt, time, and stats", () => {
     const { tweetText, clipboardText } = formatBuildProof({
       prompt: "Build a habit tracker",

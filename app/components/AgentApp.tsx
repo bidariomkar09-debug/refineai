@@ -203,7 +203,6 @@ export default function AgentApp({
   const activeFileIdRef = useRef<string | null>(null);
   const activeFilePathRef = useRef<string>("");
   const planRef = useRef<ProjectPlan | null>(null);
-  const initialIdeaSubmittedRef = useRef(false);
 
   useEffect(() => {
     planRef.current = plan;
@@ -846,12 +845,8 @@ export default function AgentApp({
     [loadProjects, refreshFiles]
   );
 
-  useEffect(() => {
-    const idea = initialIdea?.trim();
-    if (!idea || !startFresh || initialIdeaSubmittedRef.current || projectId) return;
-    initialIdeaSubmittedRef.current = true;
-    void handlePlanIdea(idea);
-  }, [initialIdea, startFresh, projectId, handlePlanIdea]);
+  const composerSeed =
+    startFresh && initialIdea?.trim() ? initialIdea.trim() : undefined;
 
   const handleRevision = useCallback(
     async (message: string) => {
@@ -1709,6 +1704,7 @@ export default function AgentApp({
           onBuild={handleBuild}
           buildDisabled={isLoading}
           onComposerActivity={setIsComposerActive}
+          initialValue={composerSeed}
         />
       </div>
 
@@ -1751,6 +1747,7 @@ export default function AgentApp({
           onBuild={handleBuild}
           buildDisabled={isLoading}
           onComposerActivity={setIsComposerActive}
+          initialValue={composerSeed}
         />
       </div>
 

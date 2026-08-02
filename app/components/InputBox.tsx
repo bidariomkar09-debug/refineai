@@ -18,6 +18,7 @@ type InputBoxProps = {
   onBuild?: () => void;
   buildDisabled?: boolean;
   onComposerActivity?: (active: boolean) => void;
+  initialValue?: string;
 };
 
 function getPlaceholder(
@@ -56,8 +57,9 @@ export default function InputBox({
   onBuild,
   buildDisabled = false,
   onComposerActivity,
+  initialValue,
 }: InputBoxProps) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialValue?.trim() ?? "");
   const isPanel = variant === "panel";
 
   const notifyComposer = useCallback(

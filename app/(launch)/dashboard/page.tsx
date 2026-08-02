@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { getTimeGreeting, getWelcomeBackMessage } from "@/app/lib/personalization";
-import DailyBuildCard from "@/app/components/dashboard/DailyBuildCard";
 
 type RecentProject = {
   id: string;
@@ -167,8 +166,6 @@ export default function LaunchScreen() {
             </Link>
           </p>
         </div>
-
-        <DailyBuildCard projects={projects} />
 
         {verifiedAvg !== null && (
           <div
