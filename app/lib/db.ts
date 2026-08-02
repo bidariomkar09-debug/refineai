@@ -227,18 +227,44 @@ export async function finalizeFileResult(
   id: string,
   input: FinalizeFileResultInput
 ): Promise<void> {
-  const { error } = await getClient()
-    .from("files")
-    .update({
-      content: input.content,
-      score: input.displayScore,
-      ai_score: input.aiScore,
-      runtime_verified: input.runtimeVerified,
-      runtime_errors: input.runtimeErrors,
-      rounds_taken: input.roundsTaken,
-      status: input.status,
-    })
-    .eq("id", id);
+  const fullUpdate = {
+    content: input.content,
+    score: input.displayScore,
+    ai_score: input.aiScore,
+    runtime_verified: input.runtimeVerified,
+    runtime_errors: input.runtimeErrors,
+    rounds_taken: input.roundsTaken,
+    status: input.status,
+  };
+
+  const { error } = await getClient().from("files").update(fullUpdate).eq("id", id);
+
+  // Production may lag migrations — fall back without reliability columns.
+  if (
+    error &&
+    (error.message.includes("runtime_verified") ||
+      error.message.includes("ai_score") ||
+      error.message.includes("runtime_errors") ||
+      error.message.includes("needs_fix") ||
+      error.message.includes("best_effort"))
+  ) {
+    const legacyStatus =
+      input.status === "needs_fix" || input.status === "best_effort"
+        ? "done"
+        : input.status;
+    const { error: legacyError } = await getClient()
+      .from("files")
+      .update({
+        content: input.content,
+        score: input.displayScore,
+        rounds_taken: input.roundsTaken,
+        status: legacyStatus,
+      })
+      .eq("id", id);
+    if (legacyError) throw new DbError(legacyError.message);
+    return;
+  }
+
   if (error) throw new DbError(error.message);
 }
 
@@ -551,16 +577,37 @@ export async function deleteProject(id: string): Promise<void> {
 async function getProjectStatsMap(): Promise<
   Map<string, { fileCount: number; doneCount: number; avgScore: number; verifiedAvgScore: number }>
 > {
-  const { data, error } = await getClient()
+  type FileStatRow = {
+    project_id: string;
+    status: string;
+    score: number | null;
+    runtime_verified?: boolean | null;
+  };
+
+  let rows: FileStatRow[] = [];
+
+  const withVerified = await getClient()
     .from("files")
     .select("project_id, status, score, runtime_verified");
-  if (error) throw new DbError(error.message);
+
+  if (withVerified.error?.message?.includes("runtime_verified")) {
+    const fallback = await getClient()
+      .from("files")
+      .select("project_id, status, score");
+    if (fallback.error) throw new DbError(fallback.error.message);
+    rows = (fallback.data ?? []) as FileStatRow[];
+  } else if (withVerified.error) {
+    throw new DbError(withVerified.error.message);
+  } else {
+    rows = (withVerified.data ?? []) as FileStatRow[];
+  }
+
   const map = new Map<
     string,
     { fileCount: number; doneCount: number; totalScore: number; verifiedTotal: number; verifiedCount: number }
   >();
-  for (const row of data ?? []) {
-    const pid = row.project_id as string;
+  for (const row of rows) {
+    const pid = row.project_id;
     const entry = map.get(pid) ?? {
       fileCount: 0,
       doneCount: 0,
@@ -623,16 +670,30 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     .select("*", { count: "exact", head: true })
     .eq("status", "done");
 
-  const { data: doneFiles } = await getClient()
+  type DoneFileRow = { score: number | null; runtime_verified?: boolean | null };
+  let doneFiles: DoneFileRow[] = [];
+  const doneWithVerified = await getClient()
     .from("files")
     .select("score, runtime_verified")
     .eq("status", "done");
+  if (doneWithVerified.error?.message?.includes("runtime_verified")) {
+    const fallback = await getClient()
+      .from("files")
+      .select("score")
+      .eq("status", "done");
+    if (fallback.error) throw new DbError(fallback.error.message);
+    doneFiles = (fallback.data ?? []) as DoneFileRow[];
+  } else if (doneWithVerified.error) {
+    throw new DbError(doneWithVerified.error.message);
+  } else {
+    doneFiles = (doneWithVerified.data ?? []) as DoneFileRow[];
+  }
 
-  const scores = (doneFiles ?? []).map((f) => f.score as number).filter((s) => s > 0);
+  const scores = doneFiles.map((f) => f.score as number).filter((s) => s > 0);
   const averageScore =
     scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
 
-  const verifiedFiles = (doneFiles ?? []).filter((f) => f.runtime_verified === true);
+  const verifiedFiles = doneFiles.filter((f) => f.runtime_verified === true);
   const verifiedScores = verifiedFiles
     .map((f) => f.score as number)
     .filter((s) => s > 0);
@@ -641,7 +702,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       ? Math.round(verifiedScores.reduce((a, b) => a + b, 0) / verifiedScores.length)
       : 0;
   const verifiedFileCount = verifiedFiles.length;
-  const unverifiedFileCount = (doneFiles ?? []).length - verifiedFileCount;
+  const unverifiedFileCount = doneFiles.length - verifiedFileCount;
 
   const { count: loopCount } = await getClient()
     .from("file_rounds")
