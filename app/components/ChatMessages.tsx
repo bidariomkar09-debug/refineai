@@ -26,6 +26,8 @@ type ChatMessagesProps = {
   onDebugApply?: (proposal: DebugProposal, messageId: string) => void;
   appliedDebugMessageIds?: Set<string>;
   actionsDisabled?: boolean;
+  /** Hide Build/Edit plan when a paused build must be resumed */
+  hidePlanActions?: boolean;
   /** Live build state for the latest plan card */
   livePlan?: ProjectPlan | null;
   liveFiles?: ExplorerFile[];
@@ -47,6 +49,7 @@ export default function ChatMessages({
   onDebugApply,
   appliedDebugMessageIds,
   actionsDisabled,
+  hidePlanActions = false,
   livePlan,
   liveFiles,
   phase,
@@ -135,7 +138,10 @@ export default function ChatMessages({
                 defaultExpanded={isLiveCard ? false : undefined}
               />
             )}
-            {msg.metadata?.showPlanActions && onPlanApprove && onPlanModify && (
+            {msg.metadata?.showPlanActions &&
+              !hidePlanActions &&
+              onPlanApprove &&
+              onPlanModify && (
               <PlanModeActions
                 onApprove={onPlanApprove}
                 onModify={onPlanModify}

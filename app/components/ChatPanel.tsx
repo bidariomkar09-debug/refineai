@@ -30,6 +30,7 @@ type ChatPanelProps = {
   buildDisabled?: boolean;
   onComposerActivity?: (active: boolean) => void;
   initialValue?: string;
+  hidePlanActions?: boolean;
 };
 
 function PanelContent({
@@ -51,6 +52,7 @@ function PanelContent({
   buildDisabled,
   onComposerActivity,
   initialValue,
+  hidePlanActions,
 }: Pick<
   ChatPanelProps,
   | "messages"
@@ -71,6 +73,7 @@ function PanelContent({
   | "buildDisabled"
   | "onComposerActivity"
   | "initialValue"
+  | "hidePlanActions"
 >) {
   return (
     <>
@@ -83,7 +86,8 @@ function PanelContent({
           onPlanAnswer={onPlanAnswer}
           onDebugApply={onDebugApply}
           appliedDebugMessageIds={appliedDebugMessageIds}
-          actionsDisabled={isLoading}
+          actionsDisabled={isLoading || buildDisabled}
+          hidePlanActions={hidePlanActions}
         />
       </div>
 

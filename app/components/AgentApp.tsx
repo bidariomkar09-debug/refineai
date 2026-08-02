@@ -112,6 +112,7 @@ export default function AgentApp({
   const [isLoading, setIsLoading] = useState(false);
   const [awaitingChanges, setAwaitingChanges] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [buildStarting, setBuildStarting] = useState(false);
   const [planIntro, setPlanIntro] = useState<string | null>(null);
   const [planMarkdown, setPlanMarkdown] = useState<string | null>(null);
   const [chatMode, setChatMode] = useState<ChatMode>("agent");
@@ -136,21 +137,12 @@ export default function AgentApp({
   }, []);
 
   const inputDisabled = useMemo(() => {
-    if (isLoading) return true;
+    if (isLoading || buildStarting) return true;
     if (chatMode === "ask") return false;
     if (chatMode === "debug") return !projectId;
     if (chatMode === "plan") return phase === "building" || phase === "complete";
     return phase === "complete" || (phase === "planning" && isLoading);
-  }, [chatMode, isLoading, phase, projectId]);
-
-  const showBuild = useMemo(() => {
-    if (!plan || phase !== "awaiting_confirm" || isLoading) return false;
-    if (chatMode === "agent" && showConfirm) return true;
-    if (chatMode === "plan") {
-      return messages.some((m) => m.metadata?.showPlanActions);
-    }
-    return false;
-  }, [chatMode, showConfirm, phase, plan, isLoading, messages]);
+  }, [chatMode, isLoading, buildStarting, phase, projectId]);
 
   const [centerTab, setCenterTab] = useState<CenterTab>("plan");
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
@@ -197,6 +189,24 @@ export default function AgentApp({
   >([]);
   const [latestMemory, setLatestMemory] = useState<string | null>(null);
   const { toasts, pushToast, dismissToast } = useToastStack();
+
+  const showBuild = useMemo(() => {
+    if (!plan || phase !== "awaiting_confirm") return false;
+    if (showResumeBuild || buildStarting) return false;
+    if (chatMode === "agent" && showConfirm) return true;
+    if (chatMode === "plan") {
+      return messages.some((m) => m.metadata?.showPlanActions);
+    }
+    return false;
+  }, [
+    chatMode,
+    showConfirm,
+    phase,
+    plan,
+    messages,
+    showResumeBuild,
+    buildStarting,
+  ]);
 
   const buildAbortRef = useRef<AbortController | null>(null);
   const controlsRef = useRef<OrchestratorControls | null>(null);
@@ -558,7 +568,12 @@ export default function AgentApp({
             const planMeta = normalizeLoadedPlan(m.metadata?.plan);
             const markdown = m.metadata?.planMarkdown as string | undefined;
             const awaitingBuild =
-              project.status !== "complete" && project.status !== "building";
+              project.status !== "complete" &&
+              project.status !== "building" &&
+              project.status !== "error";
+            const hasMidBuildFiles = loadedFiles.some((f) =>
+              ["building", "needs_fix"].includes(f.status)
+            );
             return {
               id: m.id,
               role: m.role,
@@ -571,7 +586,9 @@ export default function AgentApp({
               metadata: {
                 ...m.metadata,
                 showPlanActions:
-                  m.metadata?.showPlanActions === true && awaitingBuild,
+                  m.metadata?.showPlanActions === true &&
+                  awaitingBuild &&
+                  !hasMidBuildFiles,
               },
             };
           }
@@ -1188,6 +1205,7 @@ export default function AgentApp({
 
   const handleConfirm = useCallback(async () => {
     if (!projectId || !plan) return;
+    setBuildStarting(true);
     setShowConfirm(false);
     setIsLoading(true);
     setPhase("building");
@@ -1202,6 +1220,13 @@ export default function AgentApp({
     setMemoryRounds([]);
     setLatestMemory(null);
     setShowResumeBuild(false);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.metadata?.showPlanActions
+          ? { ...m, metadata: { ...m.metadata, showPlanActions: false } }
+          : m
+      )
+    );
 
     appendBuildMessage(USER_MESSAGES.building);
 
@@ -1220,6 +1245,8 @@ export default function AgentApp({
       {
         onStatus: setStatusMessage,
         onFileStart: (file) => {
+          setBuildStarting(false);
+          setIsLoading(false);
           activeFileIdRef.current = file.id;
           activeFilePathRef.current = file.file_path;
           setActiveFile(file);
@@ -1294,6 +1321,7 @@ export default function AgentApp({
           setSummaryPlan(finalPlan);
           setPhase("complete");
           setBuildEndedAt(Date.now());
+          setBuildStarting(false);
           setIsLoading(false);
           setStatusMessage("");
           setActiveProgress(null);
@@ -1323,8 +1351,6 @@ export default function AgentApp({
       },
       buildAbortRef.current.signal
     );
-
-    setIsLoading(false);
   }, [
     projectId,
     plan,
@@ -1339,12 +1365,18 @@ export default function AgentApp({
 
   const handleResumeBuild = useCallback(async () => {
     if (!projectId || !plan) return;
+    setBuildStarting(true);
+    setIsLoading(true);
     const res = await fetch("/api/projects/resume-build", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId }),
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      setBuildStarting(false);
+      setIsLoading(false);
+      return;
+    }
     const data = await res.json();
     const remainingIds = new Set((data.remainingFileIds ?? []) as string[]);
     const currentFiles = await refreshFiles(projectId);
@@ -1359,11 +1391,20 @@ export default function AgentApp({
           );
     if (filesToBuild.length === 0) {
       setShowResumeBuild(false);
+      setBuildStarting(false);
+      setIsLoading(false);
       return;
     }
     setShowResumeBuild(false);
     setPhase("building");
     setBuildStartedAt(Date.now());
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.metadata?.showPlanActions
+          ? { ...m, metadata: { ...m.metadata, showPlanActions: false } }
+          : m
+      )
+    );
     buildAbortRef.current = new AbortController();
     controlsRef.current = startBuild(
       projectId,
@@ -1371,6 +1412,8 @@ export default function AgentApp({
       {
         onStatus: setStatusMessage,
         onFileStart: (file) => {
+          setBuildStarting(false);
+          setIsLoading(false);
           activeFileIdRef.current = file.id;
           setActiveFile(file);
           setSelectedFileId(file.id);
@@ -1404,6 +1447,8 @@ export default function AgentApp({
           setSummaryPlan(finalPlan);
           setPhase("complete");
           setBuildEndedAt(Date.now());
+          setBuildStarting(false);
+          setIsLoading(false);
           setStatusMessage("");
           loadProjects();
         },
@@ -1414,7 +1459,8 @@ export default function AgentApp({
   }, [projectId, plan, refreshFiles, trackLoopRound, loadProjects, pushToast]);
 
   const handlePlanApprove = useCallback(async () => {
-    if (!projectId || !plan) return;
+    if (!projectId || !plan || buildStarting) return;
+    setBuildStarting(true);
     setIsLoading(true);
     setMessages((prev) =>
       prev.map((m) =>
@@ -1431,17 +1477,28 @@ export default function AgentApp({
     });
 
     await refreshFiles(projectId);
-    setIsLoading(false);
     await handleConfirm();
-  }, [projectId, plan, refreshFiles, handleConfirm]);
+  }, [projectId, plan, refreshFiles, handleConfirm, buildStarting]);
 
   const handleBuild = useCallback(() => {
+    if (buildStarting) return;
+    if (showResumeBuild) {
+      void handleResumeBuild();
+      return;
+    }
     if (chatMode === "plan") {
       void handlePlanApprove();
     } else {
       void handleConfirm();
     }
-  }, [chatMode, handlePlanApprove, handleConfirm]);
+  }, [
+    buildStarting,
+    showResumeBuild,
+    chatMode,
+    handlePlanApprove,
+    handleConfirm,
+    handleResumeBuild,
+  ]);
 
   const handleMakeChanges = useCallback(() => {
     setAwaitingChanges(true);
@@ -1658,7 +1715,8 @@ export default function AgentApp({
                 onPlanAnswer={handlePlanMode}
                 onDebugApply={handleDebugApply}
                 appliedDebugMessageIds={appliedDebugMessageIds}
-                actionsDisabled={isLoading}
+                actionsDisabled={isLoading || buildStarting}
+                hidePlanActions={showResumeBuild || buildStarting}
                 {...chatLiveProps}
               />
             </div>
@@ -1674,7 +1732,8 @@ export default function AgentApp({
               onPlanAnswer={handlePlanMode}
               onDebugApply={handleDebugApply}
               appliedDebugMessageIds={appliedDebugMessageIds}
-              actionsDisabled={isLoading}
+              actionsDisabled={isLoading || buildStarting}
+              hidePlanActions={showResumeBuild || buildStarting}
               {...chatLiveProps}
             />
           </div>
@@ -1702,9 +1761,10 @@ export default function AgentApp({
           appliedDebugMessageIds={appliedDebugMessageIds}
           showBuild={showBuild}
           onBuild={handleBuild}
-          buildDisabled={isLoading}
+          buildDisabled={isLoading || buildStarting}
           onComposerActivity={setIsComposerActive}
           initialValue={composerSeed}
+          hidePlanActions={showResumeBuild || buildStarting}
         />
       </div>
 
@@ -1745,7 +1805,7 @@ export default function AgentApp({
           onModeChange={handleModeChange}
           showBuild={showBuild}
           onBuild={handleBuild}
-          buildDisabled={isLoading}
+          buildDisabled={isLoading || buildStarting}
           onComposerActivity={setIsComposerActive}
           initialValue={composerSeed}
         />
