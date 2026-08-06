@@ -46,13 +46,21 @@ export function formatDatabaseTables(schema?: string): string {
   return tables.join(" · ");
 }
 
-export function formatApiRoutes(routes: string[]): string {
-  if (routes.length === 0) return "";
+export function formatApiRoutes(routes: unknown[]): string {
+  if (!routes?.length) return "";
   return routes
     .map((route) => {
-      const normalized = route.startsWith("/") ? route : `/${route}`;
+      const raw =
+        typeof route === "string"
+          ? route
+          : route && typeof route === "object" && "path" in route
+            ? String((route as { path: unknown }).path ?? "")
+            : String(route ?? "");
+      if (!raw) return "";
+      const normalized = raw.startsWith("/") ? raw : `/${raw}`;
       return normalized.replace(/\/route\.ts$/i, "").replace(/\/+$/, "") || normalized;
     })
+    .filter(Boolean)
     .join(" · ");
 }
 
