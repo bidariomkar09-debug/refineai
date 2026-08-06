@@ -59,11 +59,19 @@ export function mergeProjectFiles(
 }
 
 export function syncFileIntoList(files: DbFile[], incoming: DbFile): DbFile[] {
-  const exists = files.some((f) => f.id === incoming.id);
+  const normalizedPath = incoming.file_path.replace(/\\/g, "/");
+  const withoutPathDup = files.filter(
+    (f) =>
+      f.id === incoming.id ||
+      f.file_path.replace(/\\/g, "/") !== normalizedPath
+  );
+  const exists = withoutPathDup.some((f) => f.id === incoming.id);
   if (exists) {
-    return files.map((f) => (f.id === incoming.id ? { ...f, ...incoming } : f));
+    return withoutPathDup.map((f) =>
+      f.id === incoming.id ? { ...f, ...incoming } : f
+    );
   }
-  return [...files, incoming].sort((a, b) => a.sort_order - b.sort_order);
+  return [...withoutPathDup, incoming].sort((a, b) => a.sort_order - b.sort_order);
 }
 
 export function updateFileInList(

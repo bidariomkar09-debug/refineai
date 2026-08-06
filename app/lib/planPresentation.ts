@@ -46,21 +46,26 @@ export function formatDatabaseTables(schema?: string): string {
   return tables.join(" · ");
 }
 
-export function formatApiRoutes(routes: unknown[]): string {
-  if (!routes?.length) return "";
+export function normalizeApiRoutes(routes: unknown): string[] {
+  if (!Array.isArray(routes)) return [];
   return routes
     .map((route) => {
-      const raw =
-        typeof route === "string"
-          ? route
-          : route && typeof route === "object" && "path" in route
-            ? String((route as { path: unknown }).path ?? "")
-            : String(route ?? "");
-      if (!raw) return "";
+      if (typeof route === "string") return route.trim();
+      if (route && typeof route === "object" && "path" in route) {
+        return String((route as { path: unknown }).path ?? "").trim();
+      }
+      return String(route ?? "").trim();
+    })
+    .filter(Boolean);
+}
+
+export function formatApiRoutes(routes: unknown[]): string {
+  if (!routes?.length) return "";
+  return normalizeApiRoutes(routes)
+    .map((raw) => {
       const normalized = raw.startsWith("/") ? raw : `/${raw}`;
       return normalized.replace(/\/route\.ts$/i, "").replace(/\/+$/, "") || normalized;
     })
-    .filter(Boolean)
     .join(" · ");
 }
 

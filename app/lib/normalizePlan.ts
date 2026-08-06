@@ -1,4 +1,5 @@
 import type { ProjectPlan } from "./agentTypes";
+import { normalizeApiRoutes } from "./planPresentation";
 
 /** Coerce stored plan JSON into a safe shape so UI never crashes on missing fields. */
 export function normalizeLoadedPlan(raw: unknown): ProjectPlan | null {
@@ -21,7 +22,7 @@ export function normalizeLoadedPlan(raw: unknown): ProjectPlan | null {
       deploy: "Vercel",
     },
     files: Array.isArray(plan.files) ? plan.files : [],
-    apiRoutes: Array.isArray(plan.apiRoutes) ? plan.apiRoutes : [],
+    apiRoutes: normalizeApiRoutes(plan.apiRoutes),
     estimatedFiles: plan.estimatedFiles ?? (Array.isArray(plan.files) ? plan.files.length : 0),
     steps: Array.isArray(plan.steps) ? plan.steps : [],
   };

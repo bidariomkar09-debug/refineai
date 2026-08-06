@@ -3,7 +3,7 @@ import { generateJSON } from "./agentAI";
 import { getPersonalMemory } from "./db";
 import { formatMemoryForPrompt } from "./personalMemory";
 import { detectNiche, getStackForNiche } from "./techStacks";
-import { estimateBuildMinutes, linkPlanStepsToFiles } from "./planPresentation";
+import { estimateBuildMinutes, linkPlanStepsToFiles, normalizeApiRoutes } from "./planPresentation";
 
 const PLAN_SYSTEM = `You are RefineAI, an expert software architect. Create a complete project plan from the user's idea.
 
@@ -64,10 +64,11 @@ function normalizePlan(data: ProjectPlan, niche: string, suggestedStack: ReturnT
     techStack: { ...suggestedStack, ...data.techStack },
     estimatedFiles: fileCount,
     estimatedMinutes: data.estimatedMinutes ?? estimateBuildMinutes(fileCount),
-    apiRoutes:
+    apiRoutes: normalizeApiRoutes(
       data.apiRoutes ??
-      data.files?.filter((f) => f.isApiRoute).map((f) => `/${f.path.replace(/\\/g, "/")}`) ??
-      [],
+        data.files?.filter((f) => f.isApiRoute).map((f) => `/${f.path.replace(/\\/g, "/")}`) ??
+        []
+    ),
     files: data.files?.length
       ? data.files
       : [
