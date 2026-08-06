@@ -16,6 +16,7 @@ import ToastStack, { useToastStack } from "./shell/ToastStack";
 import { isFileTrulyComplete } from "@/app/lib/fileScoring";
 import { getStoredMode, setStoredMode, isValidChatMode } from "@/app/lib/chatModes";
 import { startBuild, runQualityPass, type OrchestratorControls } from "@/app/lib/buildOrchestrator";
+import { partitionBuildQueue } from "@/app/lib/buildSpeed";
 import {
   mergeProjectFiles,
   syncFileIntoList,
@@ -213,6 +214,15 @@ export default function AgentApp({
   const activeFileIdRef = useRef<string | null>(null);
   const activeFilePathRef = useRef<string>("");
   const planRef = useRef<ProjectPlan | null>(null);
+  const pendingAutoResumeRef = useRef(false);
+  const resumeInFlightRef = useRef(false);
+  const buildInFlightRef = useRef(false);
+
+  const hidePlanActions =
+    showResumeBuild ||
+    buildStarting ||
+    phase === "building" ||
+    phase === "testing";
 
   useEffect(() => {
     planRef.current = plan;
@@ -546,6 +556,7 @@ export default function AgentApp({
 
   const loadProject = useCallback(async (project: DbProject) => {
     buildAbortRef.current?.abort();
+    buildInFlightRef.current = false;
     activeFileIdRef.current = null;
     setIsLoading(true);
 
@@ -725,7 +736,13 @@ export default function AgentApp({
           loadedFiles.some((f) =>
             ["done", "needs_fix", "best_effort", "building"].includes(f.status)
           );
-        setShowResumeBuild(hasProgress);
+        if (hasProgress) {
+          pendingAutoResumeRef.current = true;
+          setShowResumeBuild(false);
+        } else {
+          pendingAutoResumeRef.current = false;
+          setShowResumeBuild(false);
+        }
       } else {
         setPhase("awaiting_confirm");
         setShowConfirm(true);
@@ -756,29 +773,15 @@ export default function AgentApp({
   }, [startFresh]);
 
   useEffect(() => {
-    if (initialProjectId) return;
-    if (startFresh) return;
+    if (initialProjectId || startFresh) return;
 
-    let cancelled = false;
-    (async () => {
-      const storedId = getStoredActiveProjectId();
-      if (!storedId) return;
+    const storedId = getStoredActiveProjectId();
+    if (!storedId) return;
 
-      try {
-        const res = await fetch(`/api/projects?id=${storedId}`);
-        const data = await res.json();
-        if (!cancelled && data.project) {
-          await loadProject(data.project);
-        }
-      } catch {
-        // silent
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [initialProjectId, startFresh, loadProject]);
+    router.replace(`/workspace?projectId=${encodeURIComponent(storedId)}`, {
+      scroll: false,
+    });
+  }, [initialProjectId, startFresh, router]);
 
   useEffect(() => {
     if (!initialProjectId) return;
@@ -1204,7 +1207,9 @@ export default function AgentApp({
   );
 
   const handleConfirm = useCallback(async () => {
-    if (!projectId || !plan) return;
+    if (!projectId || !plan || buildInFlightRef.current) return;
+    buildInFlightRef.current = true;
+    pendingAutoResumeRef.current = false;
     setBuildStarting(true);
     setShowConfirm(false);
     setIsLoading(true);
@@ -1230,127 +1235,167 @@ export default function AgentApp({
 
     appendBuildMessage(USER_MESSAGES.building);
 
-    await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, action: "confirm" }),
-    });
+    try {
+      const confirmRes = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, action: "confirm" }),
+      });
+      if (!confirmRes.ok) {
+        throw new Error("Could not start build");
+      }
 
-    const currentFiles = await refreshFiles(projectId);
-    buildAbortRef.current = new AbortController();
+      let currentFiles = await refreshFiles(projectId);
+      const codeFiles = currentFiles.filter(
+        (f) => !f.file_path.toLowerCase().endsWith("plan.md")
+      );
+      if (codeFiles.length === 0 && (plan.files?.length ?? 0) > 0) {
+        const approveRes = await fetch("/api/modes/plan/approve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        });
+        if (!approveRes.ok) {
+          throw new Error("Could not prepare project files");
+        }
+        currentFiles = await refreshFiles(projectId);
+      }
 
-    controlsRef.current = startBuild(
-      projectId,
-      currentFiles,
-      {
-        onStatus: setStatusMessage,
-        onFileStart: (file) => {
-          setBuildStarting(false);
-          setIsLoading(false);
-          activeFileIdRef.current = file.id;
-          activeFilePathRef.current = file.file_path;
-          setActiveFile(file);
-          setSelectedFileId(file.id);
-          setCurrentCode("");
-          setViewerCode("");
-          setCurrentRound(null);
-          setActiveProgress({ fileName: file.file_name, round: null });
-          setFiles((prev) =>
-            syncFileIntoList(prev, { ...file, status: "building" })
-          );
-          const planned = findPlannedFile(planRef.current, file.file_path);
-          const friendlyMsg = planned
-            ? getFriendlyBuildMessage(planned)
-            : getFriendlyBuildMessage(file);
-          setStatusMessage(friendlyMsg);
-          appendBuildMessage(friendlyMsg);
-        },
-        onRound: (fileId, event) => {
-          const round = event.data;
-          setCurrentRound(round);
-          trackLoopRound(fileId, round);
-          if (round.memoryContext) {
-            setLatestMemory(round.memoryContext);
-            setMemoryRounds((prev) => [
-              ...prev.filter((r) => r.round !== round.round),
-              { round: round.round, memoryContext: round.memoryContext },
-            ]);
-          }
-          if (round.code) {
-            setCurrentCode(round.code);
-            if (
-              fileId === selectedFileId ||
-              fileId === activeFileIdRef.current
-            ) {
-              setViewerCode(round.code);
+      const { build: buildQueue } = partitionBuildQueue(currentFiles);
+      if (buildQueue.length === 0) {
+        pushToast("No files queued to build — try approving the plan again.", false);
+        setPhase("awaiting_confirm");
+        setShowConfirm(true);
+        buildInFlightRef.current = false;
+        setBuildStarting(false);
+        setIsLoading(false);
+        return;
+      }
+
+      buildAbortRef.current = new AbortController();
+
+      controlsRef.current = startBuild(
+        projectId,
+        currentFiles,
+        {
+          onStatus: setStatusMessage,
+          onFileStart: (file) => {
+            setBuildStarting(false);
+            setIsLoading(false);
+            activeFileIdRef.current = file.id;
+            activeFilePathRef.current = file.file_path;
+            setActiveFile(file);
+            setSelectedFileId(file.id);
+            setCurrentCode("");
+            setViewerCode("");
+            setCurrentRound(null);
+            setActiveProgress({ fileName: file.file_name, round: null });
+            setFiles((prev) =>
+              syncFileIntoList(prev, { ...file, status: "building" })
+            );
+            const planned = findPlannedFile(planRef.current, file.file_path);
+            const friendlyMsg = planned
+              ? getFriendlyBuildMessage(planned)
+              : getFriendlyBuildMessage(file);
+            setStatusMessage(friendlyMsg);
+            appendBuildMessage(friendlyMsg);
+          },
+          onRound: (fileId, event) => {
+            const round = event.data;
+            setCurrentRound(round);
+            trackLoopRound(fileId, round);
+            if (round.memoryContext) {
+              setLatestMemory(round.memoryContext);
+              setMemoryRounds((prev) => [
+                ...prev.filter((r) => r.round !== round.round),
+                { round: round.round, memoryContext: round.memoryContext },
+              ]);
             }
-          }
-          setActiveProgress((prev) =>
-            prev ? { ...prev, round } : null
-          );
-        },
-        onFileComplete: (fileId, score, trainingExamples, meta) => {
-          if (trainingExamples) {
-            setBuildTrainingExamples((n) => n + trainingExamples);
-          }
-          activeFileIdRef.current = null;
-          setActiveFile(null);
-          setFiles((prev) =>
-            updateFileInList(prev, fileId, {
-              status: meta?.status ?? "done",
-              score,
-              ai_score: meta?.aiScore ?? score,
-              runtime_verified: meta?.runtimeVerified ?? false,
-              runtime_errors: meta?.runtimeErrors,
-            })
-          );
-          refreshFiles(projectId).then((updated) => {
-            const completed = updated?.find((f) => f.id === fileId);
-            if (completed) {
-              const planned = findPlannedFile(planRef.current, completed.file_path);
-              const friendlyName = planned?.purpose ?? completed.file_name;
-              appendBuildMessage(fileCompleteMessage(friendlyName, score));
-              if (selectedFileId === fileId) {
-                setViewerCode(completed.content ?? "");
+            if (round.code) {
+              setCurrentCode(round.code);
+              if (
+                fileId === selectedFileId ||
+                fileId === activeFileIdRef.current
+              ) {
+                setViewerCode(round.code);
               }
             }
-          });
-        },
-        onRetry: (message) => pushToast(message, true),
-        onComplete: (finalPlan) => {
-          setSummaryPlan(finalPlan);
-          setPhase("complete");
-          setBuildEndedAt(Date.now());
-          setBuildStarting(false);
-          setIsLoading(false);
-          setStatusMessage("");
-          setActiveProgress(null);
-          setActiveFile(null);
-          setCenterTab("preview");
-          refreshFiles(projectId).then((updated) => {
-            const verified = (updated ?? []).filter((f) => isFileTrulyComplete(f));
-            const avgScore =
-              verified.length > 0
-                ? Math.round(verified.reduce((s, f) => s + f.score, 0) / verified.length)
-                : 0;
-            appendBuildMessage(
-              completionMessage(finalPlan.name, verified.length, avgScore)
+            setActiveProgress((prev) =>
+              prev ? { ...prev, round } : null
             );
-          });
-          loadProjects();
-          void handleRunApp();
-          void fetch("/api/memory", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ projectId }),
-          }).catch(() => {});
+          },
+          onFileComplete: (fileId, score, trainingExamples, meta) => {
+            if (trainingExamples) {
+              setBuildTrainingExamples((n) => n + trainingExamples);
+            }
+            activeFileIdRef.current = null;
+            setActiveFile(null);
+            setFiles((prev) =>
+              updateFileInList(prev, fileId, {
+                status: meta?.status ?? "done",
+                score,
+                ai_score: meta?.aiScore ?? score,
+                runtime_verified: meta?.runtimeVerified ?? false,
+                runtime_errors: meta?.runtimeErrors,
+              })
+            );
+            refreshFiles(projectId).then((updated) => {
+              const completed = updated?.find((f) => f.id === fileId);
+              if (completed) {
+                const planned = findPlannedFile(planRef.current, completed.file_path);
+                const friendlyName = planned?.purpose ?? completed.file_name;
+                appendBuildMessage(fileCompleteMessage(friendlyName, score));
+                if (selectedFileId === fileId) {
+                  setViewerCode(completed.content ?? "");
+                }
+              }
+            });
+          },
+          onRetry: (message) => pushToast(message, true),
+          onComplete: (finalPlan) => {
+            buildInFlightRef.current = false;
+            resumeInFlightRef.current = false;
+            setSummaryPlan(finalPlan);
+            setPhase("complete");
+            setBuildEndedAt(Date.now());
+            setBuildStarting(false);
+            setIsLoading(false);
+            setStatusMessage("");
+            setActiveProgress(null);
+            setActiveFile(null);
+            setCenterTab("preview");
+            refreshFiles(projectId).then((updated) => {
+              const verified = (updated ?? []).filter((f) => isFileTrulyComplete(f));
+              const avgScore =
+                verified.length > 0
+                  ? Math.round(verified.reduce((s, f) => s + f.score, 0) / verified.length)
+                  : 0;
+              appendBuildMessage(
+                completionMessage(finalPlan.name, verified.length, avgScore)
+              );
+            });
+            loadProjects();
+            void handleRunApp();
+            void fetch("/api/memory", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ projectId }),
+            }).catch(() => {});
+          },
+          onPreviewVerified: (verified) => {
+            setPreviewVerified(verified);
+          },
         },
-        onPreviewVerified: (verified) => {
-          setPreviewVerified(verified);
-        },
-      },
-      buildAbortRef.current.signal
-    );
+        buildAbortRef.current.signal
+      );
+    } catch {
+      buildInFlightRef.current = false;
+      setBuildStarting(false);
+      setIsLoading(false);
+      setPhase("awaiting_confirm");
+      setShowConfirm(true);
+      pushToast("Build could not start — try again.", false);
+    }
   }, [
     projectId,
     plan,
@@ -1364,40 +1409,15 @@ export default function AgentApp({
   ]);
 
   const handleResumeBuild = useCallback(async () => {
-    if (!projectId || !plan) return;
+    if (!projectId || !plan || resumeInFlightRef.current || buildInFlightRef.current) {
+      return;
+    }
+    resumeInFlightRef.current = true;
+    buildInFlightRef.current = true;
+    pendingAutoResumeRef.current = false;
     setBuildStarting(true);
     setIsLoading(true);
-    const res = await fetch("/api/projects/resume-build", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId }),
-    });
-    if (!res.ok) {
-      setBuildStarting(false);
-      setIsLoading(false);
-      return;
-    }
-    const data = await res.json();
-    const remainingIds = new Set((data.remainingFileIds ?? []) as string[]);
-    const currentFiles = await refreshFiles(projectId);
-    const filesToBuild =
-      remainingIds.size > 0
-        ? currentFiles.filter((f) => remainingIds.has(f.id))
-        : currentFiles.filter(
-            (f) =>
-              f.status !== "skipped" &&
-              f.status !== "done" &&
-              f.status !== "best_effort"
-          );
-    if (filesToBuild.length === 0) {
-      setShowResumeBuild(false);
-      setBuildStarting(false);
-      setIsLoading(false);
-      return;
-    }
     setShowResumeBuild(false);
-    setPhase("building");
-    setBuildStartedAt(Date.now());
     setMessages((prev) =>
       prev.map((m) =>
         m.metadata?.showPlanActions
@@ -1405,63 +1425,137 @@ export default function AgentApp({
           : m
       )
     );
-    buildAbortRef.current = new AbortController();
-    controlsRef.current = startBuild(
-      projectId,
-      filesToBuild,
-      {
-        onStatus: setStatusMessage,
-        onFileStart: (file) => {
-          setBuildStarting(false);
-          setIsLoading(false);
-          activeFileIdRef.current = file.id;
-          setActiveFile(file);
-          setSelectedFileId(file.id);
-          setFiles((prev) =>
-            syncFileIntoList(prev, { ...file, status: "building" })
-          );
+
+    let buildStarted = false;
+
+    try {
+      const res = await fetch("/api/projects/resume-build", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      if (!res.ok) {
+        setShowResumeBuild(true);
+        return;
+      }
+      const data = await res.json();
+      const remainingIds = new Set((data.remainingFileIds ?? []) as string[]);
+      let currentFiles = await refreshFiles(projectId);
+      const codeFiles = currentFiles.filter(
+        (f) => !f.file_path.toLowerCase().endsWith("plan.md")
+      );
+      if (codeFiles.length === 0 && (plan.files?.length ?? 0) > 0) {
+        const approveRes = await fetch("/api/modes/plan/approve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        });
+        if (approveRes.ok) {
+          currentFiles = await refreshFiles(projectId);
+        }
+      }
+
+      const filesToBuild =
+        remainingIds.size > 0
+          ? currentFiles.filter((f) => remainingIds.has(f.id))
+          : currentFiles.filter(
+              (f) =>
+                f.status !== "skipped" &&
+                f.status !== "done" &&
+                f.status !== "best_effort"
+            );
+      if (filesToBuild.length === 0) {
+        setShowResumeBuild(true);
+        return;
+      }
+
+      setPhase("building");
+      setBuildStartedAt(Date.now());
+      buildAbortRef.current = new AbortController();
+      controlsRef.current = startBuild(
+        projectId,
+        filesToBuild,
+        {
+          onStatus: setStatusMessage,
+          onFileStart: (file) => {
+            setBuildStarting(false);
+            setIsLoading(false);
+            activeFileIdRef.current = file.id;
+            setActiveFile(file);
+            setSelectedFileId(file.id);
+            setFiles((prev) =>
+              syncFileIntoList(prev, { ...file, status: "building" })
+            );
+          },
+          onRound: (fileId, event) => {
+            const round = event.data;
+            setCurrentRound(round);
+            trackLoopRound(fileId, round);
+            if (round.memoryContext) {
+              setLatestMemory(round.memoryContext);
+            }
+          },
+          onFileComplete: (fileId, score, trainingExamples, meta) => {
+            setFiles((prev) =>
+              updateFileInList(prev, fileId, {
+                status: meta?.status ?? "done",
+                score,
+                ai_score: meta?.aiScore ?? score,
+                runtime_verified: meta?.runtimeVerified ?? false,
+              })
+            );
+            if (trainingExamples) {
+              setBuildTrainingExamples((n) => n + trainingExamples);
+            }
+          },
+          onRetry: (message) => pushToast(message, true),
+          onComplete: (finalPlan) => {
+            buildInFlightRef.current = false;
+            resumeInFlightRef.current = false;
+            setSummaryPlan(finalPlan);
+            setPhase("complete");
+            setBuildEndedAt(Date.now());
+            setBuildStarting(false);
+            setIsLoading(false);
+            setStatusMessage("");
+            loadProjects();
+          },
+          onPreviewVerified: setPreviewVerified,
         },
-        onRound: (fileId, event) => {
-          const round = event.data;
-          setCurrentRound(round);
-          trackLoopRound(fileId, round);
-          if (round.memoryContext) {
-            setLatestMemory(round.memoryContext);
-          }
-        },
-        onFileComplete: (fileId, score, trainingExamples, meta) => {
-          setFiles((prev) =>
-            updateFileInList(prev, fileId, {
-              status: meta?.status ?? "done",
-              score,
-              ai_score: meta?.aiScore ?? score,
-              runtime_verified: meta?.runtimeVerified ?? false,
-            })
-          );
-          if (trainingExamples) {
-            setBuildTrainingExamples((n) => n + trainingExamples);
-          }
-        },
-        onRetry: (message) => pushToast(message, true),
-        onComplete: (finalPlan) => {
-          setSummaryPlan(finalPlan);
-          setPhase("complete");
-          setBuildEndedAt(Date.now());
-          setBuildStarting(false);
-          setIsLoading(false);
-          setStatusMessage("");
-          loadProjects();
-        },
-        onPreviewVerified: setPreviewVerified,
-      },
-      buildAbortRef.current.signal
-    );
+        buildAbortRef.current.signal
+      );
+      buildStarted = true;
+    } catch {
+      setShowResumeBuild(true);
+      pushToast("Could not resume build — try again.", false);
+    } finally {
+      if (!buildStarted) {
+        buildInFlightRef.current = false;
+        resumeInFlightRef.current = false;
+        setBuildStarting(false);
+        setIsLoading(false);
+      }
+    }
   }, [projectId, plan, refreshFiles, trackLoopRound, loadProjects, pushToast]);
 
+  useEffect(() => {
+    if (!pendingAutoResumeRef.current) return;
+    if (!projectId || !plan || phase !== "building") return;
+    if (buildInFlightRef.current || resumeInFlightRef.current || buildStarting) return;
+    pendingAutoResumeRef.current = false;
+    pushToast("Resuming build...", false);
+    void handleResumeBuild();
+  }, [
+    projectId,
+    plan,
+    phase,
+    buildStarting,
+    handleResumeBuild,
+    pushToast,
+  ]);
+
   const handlePlanApprove = useCallback(async () => {
-    if (!projectId || !plan || buildStarting) return;
-    setBuildStarting(true);
-    setIsLoading(true);
+    if (!projectId || !plan || buildInFlightRef.current) return;
     setMessages((prev) =>
       prev.map((m) =>
         m.metadata?.showPlanActions
@@ -1470,18 +1564,22 @@ export default function AgentApp({
       )
     );
 
-    await fetch("/api/modes/plan/approve", {
+    const approveRes = await fetch("/api/modes/plan/approve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId }),
     });
+    if (!approveRes.ok) {
+      pushToast("Could not prepare files — try again.", false);
+      return;
+    }
 
     await refreshFiles(projectId);
     await handleConfirm();
-  }, [projectId, plan, refreshFiles, handleConfirm, buildStarting]);
+  }, [projectId, plan, refreshFiles, handleConfirm, pushToast]);
 
   const handleBuild = useCallback(() => {
-    if (buildStarting) return;
+    if (buildInFlightRef.current || buildStarting) return;
     if (showResumeBuild) {
       void handleResumeBuild();
       return;
@@ -1573,18 +1671,21 @@ export default function AgentApp({
       <MobileHeader
         showLogo
         building={isBuilding}
+        disableLogoLink={isBuilding}
         onMenuClick={() => setNavDrawerOpen(true)}
         rightSlot={<FilesButton onClick={() => setFileSheetOpen(true)} />}
       />
 
-      {/* Mobile: compact loop status pill */}
-      <div className="md:hidden">
-        <LoopEngineeringPanel
-          snapshot={loopSnapshot}
-          goalMetScore={goalMetScore}
-          compact
-        />
-      </div>
+      {/* Mobile: loop pill when not actively building (PlanChatCard covers progress) */}
+      {!isBuilding && (
+        <div className="md:hidden">
+          <LoopEngineeringPanel
+            snapshot={loopSnapshot}
+            goalMetScore={goalMetScore}
+            compact
+          />
+        </div>
+      )}
 
       <header className="hidden shrink-0 items-center justify-between border-b border-surface-border bg-surface-raised px-4 py-2.5 lg:flex">
         <div className="flex items-center gap-3">
@@ -1716,7 +1817,7 @@ export default function AgentApp({
                 onDebugApply={handleDebugApply}
                 appliedDebugMessageIds={appliedDebugMessageIds}
                 actionsDisabled={isLoading || buildStarting}
-                hidePlanActions={showResumeBuild || buildStarting}
+                hidePlanActions={hidePlanActions}
                 {...chatLiveProps}
               />
             </div>
@@ -1733,7 +1834,7 @@ export default function AgentApp({
               onDebugApply={handleDebugApply}
               appliedDebugMessageIds={appliedDebugMessageIds}
               actionsDisabled={isLoading || buildStarting}
-              hidePlanActions={showResumeBuild || buildStarting}
+              hidePlanActions={hidePlanActions}
               {...chatLiveProps}
             />
           </div>
@@ -1764,7 +1865,7 @@ export default function AgentApp({
           buildDisabled={isLoading || buildStarting}
           onComposerActivity={setIsComposerActive}
           initialValue={composerSeed}
-          hidePlanActions={showResumeBuild || buildStarting}
+          hidePlanActions={hidePlanActions}
         />
       </div>
 

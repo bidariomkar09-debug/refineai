@@ -100,6 +100,9 @@ export default function ChatMessages({
           msg.id === lastPlanMessageId &&
           Boolean(livePlan || liveFiles);
 
+        const hideStalePlanCard =
+          mobile && (phase === "building" || phase === "testing") && !isLiveCard;
+
         return (
           <MessageBubble
             key={msg.id}
@@ -123,7 +126,7 @@ export default function ChatMessages({
                   disabled={actionsDisabled}
                 />
               )}
-            {plan && msg.role === "assistant" && (
+            {plan && msg.role === "assistant" && !hideStalePlanCard && (
               <PlanChatCard
                 plan={isLiveCard && livePlan ? livePlan : plan}
                 compact={compact && !mobile}

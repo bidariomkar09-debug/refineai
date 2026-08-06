@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { getTimeGreeting, getWelcomeBackMessage } from "@/app/lib/personalization";
+import { getStoredActiveProjectId } from "@/app/lib/workspaceSession";
 
 type RecentProject = {
   id: string;
@@ -72,6 +73,20 @@ export default function LaunchScreen() {
   const [timezone, setTimezone] = useState<string | undefined>(undefined);
   const [verifiedAvg, setVerifiedAvg] = useState<number | null>(null);
   const [verifiedCount, setVerifiedCount] = useState(0);
+
+  useEffect(() => {
+    const storedId = getStoredActiveProjectId();
+    if (!storedId) return;
+
+    fetch(`/api/projects?id=${encodeURIComponent(storedId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.project?.status === "building") {
+          router.replace(`/workspace?projectId=${encodeURIComponent(storedId)}`);
+        }
+      })
+      .catch(() => {});
+  }, [router]);
 
   useEffect(() => {
     Promise.all([

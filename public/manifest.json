@@ -2,7 +2,7 @@
   "name": "RefineAI",
   "short_name": "RefineAI",
   "description": "RefineAI generates, critiques, and refines output in a loop until it matches your target.",
-  "start_url": "/dashboard",
+  "start_url": "/workspace",
   "display": "standalone",
   "orientation": "portrait",
   "theme_color": "#6366f1",
