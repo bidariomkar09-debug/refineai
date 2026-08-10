@@ -328,7 +328,16 @@ test.describe("Plan mode → Build e2e", () => {
     );
 
     // ── 9. Approve API ──────────────────────────────────────────────
-    await page.waitForTimeout(2_000);
+    const approveStatus = await page
+      .waitForResponse(
+        (r) =>
+          r.url().includes("/api/modes/plan/approve") &&
+          r.request().method() === "POST",
+        { timeout: 60_000 }
+      )
+      .then((r) => r.status())
+      .catch(() => null);
+
     record(
       "9. Approve API called",
       tracker.approveCalls >= 1 ? "pass" : "fail",
@@ -341,9 +350,11 @@ test.describe("Plan mode → Build e2e", () => {
         : tracker.approveCalls === 0
           ? "skip"
           : "fail",
-      tracker.approveStatuses.length
-        ? `HTTP ${tracker.approveStatuses.join(", ")}`
-        : "no approve call"
+      approveStatus !== null
+        ? `HTTP ${approveStatus}`
+        : tracker.approveStatuses.length
+          ? `HTTP ${tracker.approveStatuses.join(", ")}`
+          : "no approve call"
     );
 
     // ── 10. Confirm API (once) ──────────────────────────────────────
