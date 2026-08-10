@@ -347,9 +347,20 @@ test.describe("Plan mode → Build e2e", () => {
     );
 
     // ── 10. Confirm API (once) ──────────────────────────────────────
+    const confirmStatus = await page
+      .waitForResponse(
+        (r) =>
+          r.url().includes("/api/projects") &&
+          r.request().method() === "POST" &&
+          (r.request().postData() ?? "").includes('"action":"confirm"'),
+        { timeout: 60_000 }
+      )
+      .then((r) => r.status())
+      .catch(() => null);
+
     record(
       "10. Confirm API called once",
-      tracker.confirmCalls === 1 ? "pass" : "fail",
+      tracker.confirmCalls === 1 && confirmStatus !== null ? "pass" : "fail",
       `calls=${tracker.confirmCalls}, statuses=[${tracker.confirmStatuses.join(", ")}]`
     );
 
@@ -424,9 +435,9 @@ test.describe("Plan mode → Build e2e", () => {
       pauseVisible ? "Pause button visible" : "Not in building phase in UI"
     );
 
-    // ── 15. Confirm not duplicated (API is source of truth) ─────────
+    // ── 15. Confirm not duplicated ──────────────────────────────────
     record(
-      "15. Single confirm API call",
+      "15. Confirm not duplicated",
       tracker.confirmCalls === 1 ? "pass" : "fail",
       `confirm API calls=${tracker.confirmCalls}${tracker.confirmCalls > 1 ? " — double-confirm gap" : ""}`
     );

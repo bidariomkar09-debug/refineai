@@ -4,6 +4,7 @@ import {
   shouldSkipFileBuild,
   isAutoWiredAppFile,
 } from "../app/lib/buildSpeed";
+import { normalizeApiRoutes } from "../app/lib/planPresentation";
 import type { DbFile } from "../app/lib/agentTypes";
 
 function mockFile(path: string, status: DbFile["status"] = "pending"): DbFile {
@@ -45,5 +46,13 @@ test.describe("Build speed optimizations", () => {
       expect.arrayContaining(["package.json", "src/App.js"])
     );
     expect(build).toHaveLength(2);
+  });
+
+  test("normalizeApiRoutes accepts string and object routes", () => {
+    expect(normalizeApiRoutes(["/api/todos", { path: "/api/chat" }])).toEqual([
+      "/api/todos",
+      "/api/chat",
+    ]);
+    expect(normalizeApiRoutes(null)).toEqual([]);
   });
 });
