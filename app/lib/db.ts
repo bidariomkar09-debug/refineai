@@ -2,15 +2,19 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import type {
   ChatMode,
   BuildCheckpoint,
+  ClarifyingQuestion,
   DbFile,
   DbFileRound,
   DbMessage,
   DbProject,
+  DbProjectPlan,
   FileStatus,
   FileTask,
   MessageType,
+  ProjectClarifications,
   ProjectPlan,
   ProjectStatus,
+  VisualPlanArtifacts,
 } from "./agentTypes";
 import type {
   CleaningSummary,
@@ -388,6 +392,121 @@ export async function savePlanMarkdown(
     score: 100,
     sort_order: -1,
   });
+  if (error) throw new DbError(error.message);
+}
+
+const memoryProjectPlans = new Map<string, DbProjectPlan>();
+
+export async function getProjectPlan(projectId: string): Promise<DbProjectPlan | null> {
+  const cached = memoryProjectPlans.get(projectId);
+  if (cached) return cached;
+
+  const { data, error } = await getClient()
+    .from("project_plans")
+    .select("*")
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (error?.message?.includes("does not exist") || error?.message?.includes("project_plans") || error?.message?.includes("schema cache")) {
+    return null;
+  }
+  if (error?.code === "PGRST116") return null;
+  if (error) throw new DbError(error.message);
+  if (!data) return null;
+  const row = data as DbProjectPlan;
+  memoryProjectPlans.set(projectId, row);
+  return row;
+}
+
+export async function upsertProjectPlan(params: {
+  projectId: string;
+  target: string;
+  questions?: ClarifyingQuestion[];
+  clarifications?: ProjectClarifications;
+  status?: DbProjectPlan["status"];
+  planText?: string | null;
+  flowchart?: string | null;
+  plainEnglish?: string | null;
+  buildPreview?: VisualPlanArtifacts | Record<string, unknown>;
+}): Promise<DbProjectPlan> {
+  const existing = memoryProjectPlans.get(params.projectId);
+  const row: Record<string, unknown> = {
+    project_id: params.projectId,
+    target: params.target,
+    updated_at: new Date().toISOString(),
+  };
+  if (params.questions !== undefined) row.questions = params.questions;
+  if (params.clarifications !== undefined) row.clarifications = params.clarifications;
+  if (params.status !== undefined) row.status = params.status;
+  if (params.planText !== undefined) row.plan_text = params.planText;
+  if (params.flowchart !== undefined) row.flowchart = params.flowchart;
+  if (params.plainEnglish !== undefined) row.plain_english = params.plainEnglish;
+  if (params.buildPreview !== undefined) row.build_preview = params.buildPreview;
+
+  const { data, error } = await getClient()
+    .from("project_plans")
+    .upsert(row, { onConflict: "project_id" })
+    .select()
+    .single();
+  if (
+    error?.message?.includes("does not exist") ||
+    error?.message?.includes("project_plans") ||
+    error?.message?.includes("schema cache")
+  ) {
+    const fallback: DbProjectPlan = {
+      id: existing?.id ?? params.projectId,
+      project_id: params.projectId,
+      target: params.target,
+      plan_text: params.planText ?? existing?.plan_text ?? null,
+      flowchart: params.flowchart ?? existing?.flowchart ?? null,
+      plain_english: params.plainEnglish ?? existing?.plain_english ?? null,
+      build_preview: params.buildPreview ?? existing?.build_preview ?? {},
+      questions: params.questions ?? existing?.questions ?? [],
+      clarifications: params.clarifications ?? existing?.clarifications ?? {},
+      status: params.status ?? existing?.status ?? "draft",
+      created_at: existing?.created_at ?? new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    memoryProjectPlans.set(params.projectId, fallback);
+    return fallback;
+  }
+  if (error) throw new DbError(error.message);
+  const saved = data as DbProjectPlan;
+  memoryProjectPlans.set(params.projectId, saved);
+  return saved;
+}
+
+export async function updateProjectClarifications(
+  projectId: string,
+  clarifications: ProjectClarifications,
+  status?: DbProjectPlan["status"]
+): Promise<void> {
+  const update: Record<string, unknown> = {
+    clarifications,
+    updated_at: new Date().toISOString(),
+  };
+  if (status) update.status = status;
+
+  const cached = memoryProjectPlans.get(projectId);
+  if (cached) {
+    memoryProjectPlans.set(projectId, {
+      ...cached,
+      clarifications,
+      status: status ?? cached.status,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  const { error } = await getClient()
+    .from("project_plans")
+    .update(update)
+    .eq("project_id", projectId);
+  if (
+    error?.message?.includes("does not exist") ||
+    error?.message?.includes("project_plans") ||
+    error?.message?.includes("schema cache")
+  ) {
+    return;
+  }
   if (error) throw new DbError(error.message);
 }
 

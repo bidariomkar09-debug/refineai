@@ -9,15 +9,19 @@ import {
 import { runPlanModeStep, revisePlanMode } from "@/app/lib/planModeEngine";
 import { createSSEStream, sseResponse } from "@/app/lib/streamClient";
 import { apiErrorMessage } from "@/app/lib/apiErrorMessage";
-import type { ProjectPlan } from "@/app/lib/agentTypes";
+import type { ClarificationAnswer, ProjectPlan } from "@/app/lib/agentTypes";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const message = typeof body.message === "string" ? body.message.trim() : "";
   let projectId = typeof body.projectId === "string" ? body.projectId : undefined;
   const revise = body.revise === true;
+  const submitClarifications = body.submitClarifications === true;
+  const clarificationAnswers = Array.isArray(body.clarificationAnswers)
+    ? (body.clarificationAnswers as ClarificationAnswer[])
+    : undefined;
 
-  if (!message) {
+  if (!message && !submitClarifications) {
     return new Response(JSON.stringify({ error: "message required" }), { status: 400 });
   }
 
@@ -34,18 +38,27 @@ export async function POST(request: NextRequest) {
 
   const stream = createSSEStream(async (send) => {
     try {
-      send({ type: "status", message: "Planning..." });
+      send({ type: "status", message: "Generating your plan..." });
 
       if (!projectId) {
         const shell = await createProjectShell(
-          message.slice(0, 60) || "New Project",
-          message
+          (message || "New Project").slice(0, 60),
+          message || "New Project"
         );
         projectId = shell.id;
         send({ type: "status", message: "Project created" });
       }
 
-      await addMessage(projectId!, "user", message, "chat", { planMode: true }, "plan");
+      if (message) {
+        await addMessage(
+          projectId!,
+          "user",
+          message,
+          "chat",
+          { planMode: true, submitClarifications },
+          "plan"
+        );
+      }
 
       const project = await getProject(projectId!);
       const currentPlan = project?.plan as ProjectPlan | undefined;
@@ -54,24 +67,35 @@ export async function POST(request: NextRequest) {
         revise && currentPlan?.files?.length
           ? await revisePlanMode({
               projectId: projectId!,
-              message,
+              message: message || "Update plan",
               currentPlan,
+              clarificationAnswers,
+              submitClarifications,
             })
-          : await runPlanModeStep({ projectId: projectId!, message });
+          : await runPlanModeStep({
+              projectId: projectId!,
+              message: message || "Submit clarifications",
+              clarificationAnswers,
+              submitClarifications,
+            });
 
-      if (result.type === "question") {
+      if (result.type === "clarifying") {
         await addMessage(
           projectId!,
           "assistant",
-          result.content,
+          "Answer a few quick questions so I can tailor your plan.",
           "chat",
-          { planMode: true, planQuestionOptions: result.options },
+          {
+            planMode: true,
+            clarifyingQuestions: result.questions,
+            clarificationsComplete: false,
+          },
           "plan"
         );
         send({
-          type: "plan_question",
-          content: result.content,
-          options: result.options,
+          type: "plan_clarifying",
+          questions: result.questions,
+          clarifications: result.clarifications,
           projectId: projectId!,
         });
         return;
@@ -82,12 +106,14 @@ export async function POST(request: NextRequest) {
       await addMessage(
         projectId!,
         "assistant",
-        result.markdown,
+        result.visual.plainEnglish,
         "plan",
         {
           plan: result.plan,
           planMarkdown: result.markdown,
+          visualPlan: result.visual,
           showPlanActions: true,
+          clarificationsComplete: true,
           planMode: true,
         },
         "plan"
@@ -95,7 +121,7 @@ export async function POST(request: NextRequest) {
 
       send({
         type: "plan_ready",
-        data: { plan: result.plan, markdown: result.markdown },
+        data: { plan: result.plan, markdown: result.markdown, visual: result.visual },
         projectId: projectId!,
       });
     } catch (err) {

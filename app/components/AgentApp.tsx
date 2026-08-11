@@ -5,11 +5,14 @@ import type {
   BuildPhase,
   ChatMessage,
   ChatMode,
+  ClarifyingQuestion,
   DbFile,
   DbProject,
   DebugProposal,
   FileRoundEvent,
+  ProjectClarifications,
   ProjectPlan,
+  VisualPlanArtifacts,
 } from "@/app/lib/agentTypes";
 import { fetchStream } from "@/app/lib/streamClient";
 import ToastStack, { useToastStack } from "./shell/ToastStack";
@@ -30,6 +33,7 @@ import {
   getPlanSummaryMessage,
   getRevisionIntro,
 } from "@/app/lib/planPresentation";
+import { generateClarifyingQuestions } from "@/app/lib/visualPlanEngine";
 import {
   normalizeLoadedPlan,
   safePlanIntro,
@@ -47,6 +51,7 @@ import {
   recordLoopIterationFromRound,
   resetLoopEngineeringState,
 } from "@/app/lib/loopEngineeringState";
+import type { PlanPhase } from "./PlanView";
 import type { LoopIteration } from "@/app/lib/loopEngineeringTypes";
 import Sidebar, { FilesButton, SidebarContent } from "./Sidebar";
 import CenterPanel, { type CenterTab } from "./CenterPanel";
@@ -118,6 +123,11 @@ export default function AgentApp({
   const [planMarkdown, setPlanMarkdown] = useState<string | null>(null);
   const [chatMode, setChatMode] = useState<ChatMode>("agent");
   const [awaitingPlanChanges, setAwaitingPlanChanges] = useState(false);
+  const [planPhase, setPlanPhase] = useState<PlanPhase>("idle");
+  const [clarifyingQuestions, setClarifyingQuestions] = useState<ClarifyingQuestion[]>([]);
+  const [clarifications, setClarifications] = useState<ProjectClarifications>({});
+  const [visualPlan, setVisualPlan] = useState<VisualPlanArtifacts | null>(null);
+  const clarificationsRef = useRef<ProjectClarifications>({});
   const [appliedDebugMessageIds, setAppliedDebugMessageIds] = useState<Set<string>>(
     new Set()
   );
@@ -196,7 +206,11 @@ export default function AgentApp({
     if (showResumeBuild || buildStarting) return false;
     if (chatMode === "agent" && showConfirm) return true;
     if (chatMode === "plan") {
-      return messages.some((m) => m.metadata?.showPlanActions);
+      const hasActions = messages.some((m) => m.metadata?.showPlanActions);
+      const clarificationsDone =
+        planPhase === "ready" ||
+        messages.some((m) => m.metadata?.clarificationsComplete);
+      return hasActions && clarificationsDone;
     }
     return false;
   }, [
@@ -207,6 +221,7 @@ export default function AgentApp({
     messages,
     showResumeBuild,
     buildStarting,
+    planPhase,
   ]);
 
   const buildAbortRef = useRef<AbortController | null>(null);
@@ -658,6 +673,31 @@ export default function AgentApp({
       );
       setFiles(loadedFiles);
       setMessages(loadedMessages);
+
+      const visualMsg = [...loadedMessages]
+        .reverse()
+        .find((m) => m.metadata?.visualPlan);
+      const clarifyingMsg = [...loadedMessages]
+        .reverse()
+        .find((m) => m.metadata?.clarifyingQuestions);
+      if (clarifyingMsg?.metadata?.clarifyingQuestions) {
+        setClarifyingQuestions(
+          clarifyingMsg.metadata.clarifyingQuestions as ClarifyingQuestion[]
+        );
+      }
+      if (visualMsg?.metadata?.visualPlan) {
+        setVisualPlan(visualMsg.metadata.visualPlan as VisualPlanArtifacts);
+        setPlanPhase("ready");
+        const vp = visualMsg.metadata.visualPlan as VisualPlanArtifacts;
+        setClarifications(vp.clarifications);
+        clarificationsRef.current = vp.clarifications;
+      } else if (clarifyingMsg?.metadata?.clarifyingQuestions) {
+        setPlanPhase("clarifying");
+      } else {
+        setVisualPlan(null);
+        setPlanPhase("idle");
+      }
+
       setSelectedFileId(null);
       setViewerCode("");
       setCenterTab("plan");
@@ -961,24 +1001,57 @@ export default function AgentApp({
   );
 
   const handlePlanMode = useCallback(
-    async (text: string) => {
+    async (text: string, options?: { submitClarifications?: boolean }) => {
       setIsLoading(true);
       setShowConfirm(false);
-      setMessages((prev) => [
-        ...prev,
-        { id: newId(), role: "user", content: text, type: "chat", mode: "plan" },
-      ]);
+      setPhase("planning");
+      if (!options?.submitClarifications) {
+        setMessages((prev) => [
+          ...prev,
+          { id: newId(), role: "user", content: text, type: "chat", mode: "plan" },
+        ]);
+      }
+
+      const clarificationAnswers = Object.entries(clarificationsRef.current).map(
+        ([id, value]) => ({ id, value })
+      );
 
       await fetchStream(
         "/api/modes/plan",
         {
           message: text,
           projectId: projectId ?? undefined,
-          revise: awaitingPlanChanges,
+          revise: awaitingPlanChanges && Boolean(plan),
+          submitClarifications: options?.submitClarifications,
+          clarificationAnswers: options?.submitClarifications
+            ? clarificationAnswers
+            : undefined,
         },
         (event) => {
           if (event.type === "status") {
             setStatusMessage(event.message);
+          } else if (event.type === "plan_clarifying") {
+            setProjectId(event.projectId);
+            setAwaitingPlanChanges(false);
+            setPlanPhase("clarifying");
+            setClarifyingQuestions(event.questions);
+            setClarifications(event.clarifications ?? {});
+            clarificationsRef.current = event.clarifications ?? {};
+            setPhase("planning");
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: newId(),
+                role: "assistant",
+                content: "Answer a few quick questions so I can tailor your plan.",
+                type: "chat",
+                mode: "plan",
+                metadata: {
+                  clarifyingQuestions: event.questions,
+                  clarificationsComplete: false,
+                },
+              },
+            ]);
           } else if (event.type === "plan_question") {
             setProjectId(event.projectId);
             setAwaitingPlanChanges(false);
@@ -997,7 +1070,9 @@ export default function AgentApp({
             setProjectId(event.projectId);
             setPlan(event.data.plan);
             setPlanMarkdown(event.data.markdown);
+            setVisualPlan(event.data.visual);
             setPlanIntro(null);
+            setPlanPhase("ready");
             setPhase("awaiting_confirm");
             setShowConfirm(false);
             setAwaitingPlanChanges(false);
@@ -1007,13 +1082,15 @@ export default function AgentApp({
               {
                 id: newId(),
                 role: "assistant",
-                content: getPlanSummaryMessage(event.data.plan),
+                content: event.data.visual.plainEnglish,
                 type: "chat",
                 mode: "plan",
                 metadata: {
                   plan: event.data.plan,
                   planMarkdown: event.data.markdown,
+                  visualPlan: event.data.visual,
                   showPlanActions: true,
+                  clarificationsComplete: true,
                 },
               },
             ]);
@@ -1037,8 +1114,20 @@ export default function AgentApp({
       setIsLoading(false);
       setStatusMessage("");
     },
-    [projectId, awaitingPlanChanges, refreshFiles, loadProjects]
+    [projectId, awaitingPlanChanges, plan, refreshFiles, loadProjects]
   );
+
+  const handleClarificationAnswer = useCallback((questionId: string, value: string) => {
+    setClarifications((prev) => {
+      const next = { ...prev, [questionId]: value };
+      clarificationsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const handleClarificationsSubmit = useCallback(() => {
+    handlePlanMode("Submit clarifications", { submitClarifications: true });
+  }, [handlePlanMode]);
 
   const handleDebug = useCallback(
     async (text: string) => {
@@ -1113,17 +1202,17 @@ export default function AgentApp({
 
   const handlePlanModify = useCallback(() => {
     setAwaitingPlanChanges(true);
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: newId(),
-        role: "assistant",
-        content: "What would you like to change in the plan?",
-        type: "chat",
-        mode: "plan",
-      },
-    ]);
-  }, []);
+    setPlanPhase("clarifying");
+    if (visualPlan?.clarifications) {
+      setClarifications(visualPlan.clarifications);
+      clarificationsRef.current = visualPlan.clarifications;
+    }
+    if (clarifyingQuestions.length === 0) {
+      const target = originalPrompt || plan?.description || "Project";
+      setClarifyingQuestions(generateClarifyingQuestions(target, plan?.niche));
+    }
+    setCenterTab("plan");
+  }, [visualPlan, clarifyingQuestions.length, originalPrompt, plan]);
 
   const handleDebugApply = useCallback(
     async (proposal: DebugProposal, messageId: string) => {
@@ -1599,6 +1688,10 @@ export default function AgentApp({
   ]);
 
   const handleMakeChanges = useCallback(() => {
+    if (chatMode === "plan") {
+      handlePlanModify();
+      return;
+    }
     setAwaitingChanges(true);
     setShowConfirm(false);
     setCenterTab("plan");
@@ -1611,7 +1704,7 @@ export default function AgentApp({
         type: "chat",
       },
     ]);
-  }, []);
+  }, [chatMode, handlePlanModify]);
 
   const handleAcceptAll = useCallback(() => {
     setReviewAccepted(true);
@@ -1664,6 +1757,11 @@ export default function AgentApp({
     activeFileName: activeFile?.file_name ?? activeProgress?.fileName ?? null,
     onPause: () => controlsRef.current?.pause(),
     onSkip: () => controlsRef.current?.skipCurrent(),
+    clarifyingQuestions,
+    clarifications,
+    planPhase,
+    onClarificationAnswer: handleClarificationAnswer,
+    onClarificationsSubmit: handleClarificationsSubmit,
   };
 
   return (
@@ -1757,6 +1855,12 @@ export default function AgentApp({
             isLoading={isLoading}
             planIntro={planIntro}
             planMarkdown={planMarkdown}
+            planPhase={planPhase}
+            visualPlan={visualPlan}
+            clarifyingQuestions={clarifyingQuestions}
+            clarifications={clarifications}
+            onClarificationAnswer={handleClarificationAnswer}
+            onClarificationsSubmit={handleClarificationsSubmit}
             previewStatus={previewStatus}
             previewLastUpdated={previewLastUpdated}
             previewIframeKey={previewIframeKey}
@@ -1858,6 +1962,11 @@ export default function AgentApp({
           onPlanApprove={handlePlanApprove}
           onPlanModify={handlePlanModify}
           onPlanAnswer={handlePlanMode}
+          onClarificationAnswer={handleClarificationAnswer}
+          onClarificationsSubmit={handleClarificationsSubmit}
+          clarifyingQuestions={clarifyingQuestions}
+          clarifications={clarifications}
+          planPhase={planPhase}
           onDebugApply={handleDebugApply}
           appliedDebugMessageIds={appliedDebugMessageIds}
           showBuild={showBuild}

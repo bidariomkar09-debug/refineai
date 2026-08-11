@@ -1,10 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { BuildPhase, ChatMode, DbFile, ProjectPlan } from "@/app/lib/agentTypes";
+import type { BuildPhase, ChatMode, ClarifyingQuestion, DbFile, ProjectClarifications, ProjectPlan, VisualPlanArtifacts } from "@/app/lib/agentTypes";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import type { PreviewLogLine, PreviewStatus } from "@/app/lib/previewTypes";
-import PlanView from "./PlanView";
+import PlanView, { type PlanPhase } from "./PlanView";
 import PreviewPanel from "./PreviewPanel";
 import type { SandpackTemplate } from "@/app/lib/previewSandpack";
 import type { LoopEngineeringSnapshot } from "@/app/lib/loopEngineeringTypes";
@@ -32,6 +32,12 @@ type CenterPanelProps = {
   isLoading: boolean;
   planIntro: string | null;
   planMarkdown?: string | null;
+  planPhase?: PlanPhase;
+  visualPlan?: VisualPlanArtifacts | null;
+  clarifyingQuestions?: ClarifyingQuestion[];
+  clarifications?: ProjectClarifications;
+  onClarificationAnswer?: (questionId: string, value: string) => void;
+  onClarificationsSubmit?: () => void;
   previewStatus: PreviewStatus;
   previewLastUpdated: string | null;
   previewIframeKey: number;
@@ -109,6 +115,12 @@ export default function CenterPanel({
   isLoading,
   planIntro,
   planMarkdown,
+  planPhase,
+  visualPlan,
+  clarifyingQuestions,
+  clarifications,
+  onClarificationAnswer,
+  onClarificationsSubmit,
   previewStatus,
   previewLastUpdated,
   previewIframeKey,
@@ -187,6 +199,7 @@ export default function CenterPanel({
             plan={plan}
             summaryPlan={summaryPlan}
             phase={phase}
+            planPhase={planPhase}
             statusMessage={statusMessage}
             showConfirm={showConfirm && chatMode === "agent"}
             mergedFiles={mergedFiles}
@@ -194,6 +207,12 @@ export default function CenterPanel({
             isLoading={isLoading}
             planIntro={planIntro}
             planMarkdown={planMarkdown}
+            visualPlan={visualPlan}
+            clarifyingQuestions={clarifyingQuestions}
+            clarifications={clarifications}
+            onClarificationAnswer={onClarificationAnswer}
+            onClarificationsSubmit={onClarificationsSubmit}
+            chatMode={chatMode}
             onConfirm={onConfirm}
             onMakeChanges={onMakeChanges}
             onDownload={onDownload}

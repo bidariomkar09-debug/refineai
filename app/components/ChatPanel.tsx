@@ -1,6 +1,15 @@
 "use client";
 
-import type { BuildPhase, ChatMessage, ChatMode, DebugProposal, ProjectPlan } from "@/app/lib/agentTypes";
+import type {
+  BuildPhase,
+  ChatMessage,
+  ChatMode,
+  ClarifyingQuestion,
+  DebugProposal,
+  ProjectClarifications,
+  ProjectPlan,
+} from "@/app/lib/agentTypes";
+import type { PlanPhase } from "./PlanView";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import ChatMessages from "./ChatMessages";
 import InputBox from "./InputBox";
@@ -23,6 +32,11 @@ type ChatPanelProps = {
   onPlanApprove?: () => void;
   onPlanModify?: () => void;
   onPlanAnswer?: (answer: string) => void;
+  onClarificationAnswer?: (questionId: string, value: string) => void;
+  onClarificationsSubmit?: () => void;
+  clarifyingQuestions?: ClarifyingQuestion[];
+  clarifications?: ProjectClarifications;
+  planPhase?: PlanPhase;
   onDebugApply?: (proposal: DebugProposal, messageId: string) => void;
   appliedDebugMessageIds?: Set<string>;
   showBuild?: boolean;
@@ -45,6 +59,11 @@ function PanelContent({
   onPlanApprove,
   onPlanModify,
   onPlanAnswer,
+  onClarificationAnswer,
+  onClarificationsSubmit,
+  clarifyingQuestions,
+  clarifications,
+  planPhase,
   onDebugApply,
   appliedDebugMessageIds,
   showBuild,
@@ -66,6 +85,11 @@ function PanelContent({
   | "onPlanApprove"
   | "onPlanModify"
   | "onPlanAnswer"
+  | "onClarificationAnswer"
+  | "onClarificationsSubmit"
+  | "clarifyingQuestions"
+  | "clarifications"
+  | "planPhase"
   | "onDebugApply"
   | "appliedDebugMessageIds"
   | "showBuild"
@@ -84,6 +108,11 @@ function PanelContent({
           onPlanApprove={onPlanApprove}
           onPlanModify={onPlanModify}
           onPlanAnswer={onPlanAnswer}
+          onClarificationAnswer={onClarificationAnswer}
+          onClarificationsSubmit={onClarificationsSubmit}
+          clarifyingQuestions={clarifyingQuestions}
+          clarifications={clarifications}
+          planPhase={planPhase}
           onDebugApply={onDebugApply}
           appliedDebugMessageIds={appliedDebugMessageIds}
           actionsDisabled={isLoading || buildDisabled}

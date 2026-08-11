@@ -1,19 +1,30 @@
 "use client";
 
-import type { BuildPhase, DbFile, ProjectPlan } from "@/app/lib/agentTypes";
+import type {
+  BuildPhase,
+  ClarifyingQuestion,
+  DbFile,
+  ProjectClarifications,
+  ProjectPlan,
+  VisualPlanArtifacts,
+} from "@/app/lib/agentTypes";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import { getPlanIntro, getRevisionIntro, getPlanSteps, getActiveStepLabel } from "@/app/lib/planPresentation";
 import { USER_MESSAGES } from "@/app/lib/userMessages";
+import ClarifyingQuestions from "./ClarifyingQuestions";
 import PlanCard from "./PlanCard";
 import PlanDocument from "./PlanDocument";
 import HumanReviewPanel from "./loop/HumanReviewPanel";
 import LoopEngineeringSummary from "./loop/LoopEngineeringSummary";
 import type { LoopEngineeringSnapshot } from "@/app/lib/loopEngineeringTypes";
 
+export type PlanPhase = "idle" | "clarifying" | "ready";
+
 type PlanViewProps = {
   plan: ProjectPlan | null;
   summaryPlan: ProjectPlan | null;
   phase: BuildPhase;
+  planPhase?: PlanPhase;
   statusMessage: string;
   showConfirm: boolean;
   mergedFiles: ExplorerFile[];
@@ -21,6 +32,11 @@ type PlanViewProps = {
   isLoading: boolean;
   planIntro: string | null;
   planMarkdown?: string | null;
+  visualPlan?: VisualPlanArtifacts | null;
+  clarifyingQuestions?: ClarifyingQuestion[];
+  clarifications?: ProjectClarifications;
+  onClarificationAnswer?: (questionId: string, value: string) => void;
+  onClarificationsSubmit?: () => void;
   onConfirm: () => void;
   onMakeChanges: () => void;
   onDownload: () => void;
@@ -36,6 +52,7 @@ type PlanViewProps = {
   originalPrompt: string;
   projectId: string | null;
   trainingExamplesAdded: number;
+  chatMode?: "agent" | "ask" | "plan" | "debug";
 };
 
 function IntroMessage({ text, animate }: { text: string; animate?: boolean }) {
@@ -59,12 +76,12 @@ function BuildStatusBanner({ message }: { message: string }) {
   );
 }
 
-function PlanningShimmer() {
+function PlanningShimmer({ message }: { message?: string }) {
   return (
     <div className="space-y-4 motion-safe:animate-fade-in">
       <div className="h-4 w-3/4 animate-pulse rounded bg-surface-border" />
       <div className="h-32 animate-pulse rounded-xl border border-surface-border bg-surface-raised" />
-      <p className="text-sm text-gray-400">{USER_MESSAGES.planning}</p>
+      <p className="text-sm text-gray-400">{message ?? USER_MESSAGES.planning}</p>
     </div>
   );
 }
@@ -73,6 +90,7 @@ export default function PlanView({
   plan,
   summaryPlan,
   phase,
+  planPhase = "idle",
   statusMessage,
   showConfirm,
   mergedFiles,
@@ -80,6 +98,11 @@ export default function PlanView({
   isLoading,
   planIntro,
   planMarkdown,
+  visualPlan,
+  clarifyingQuestions,
+  clarifications = {},
+  onClarificationAnswer,
+  onClarificationsSubmit,
   onConfirm,
   onMakeChanges,
   onDownload,
@@ -95,11 +118,20 @@ export default function PlanView({
   originalPrompt,
   projectId,
   trainingExamplesAdded,
+  chatMode = "agent",
 }: PlanViewProps) {
   const isBuilding = phase === "building" || phase === "testing";
   const displayPlan = summaryPlan ?? plan;
+  const isPlanMode = chatMode === "plan";
+  const showVisualPlan = Boolean(visualPlan && displayPlan);
+  const showClarifying =
+    isPlanMode &&
+    planPhase === "clarifying" &&
+    clarifyingQuestions &&
+    clarifyingQuestions.length > 0 &&
+    onClarificationAnswer;
 
-  if (phase === "idle" && !plan && !isLoading) {
+  if (phase === "idle" && !plan && !isLoading && planPhase === "idle") {
     return (
       <div className="flex h-full flex-col items-center justify-center px-6 text-center">
         <div className="mb-4 rounded-full bg-surface-raised p-4">
@@ -126,11 +158,11 @@ export default function PlanView({
     );
   }
 
-  if (phase === "planning" && isLoading && !displayPlan) {
+  if (isLoading && !displayPlan && !showClarifying) {
     return (
       <div className="h-full overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-3xl">
-          <PlanningShimmer />
+          <PlanningShimmer message="Generating your plan..." />
         </div>
       </div>
     );
@@ -144,19 +176,58 @@ export default function PlanView({
         : getPlanIntro(displayPlan)
       : null);
 
+  const showPlanActions =
+    isPlanMode
+      ? planPhase === "ready" && phase === "awaiting_confirm"
+      : showConfirm && phase === "awaiting_confirm";
+
   return (
     <div className="h-full overflow-y-auto px-6 py-6">
       <div className="mx-auto max-w-3xl space-y-5">
-        {planMarkdown && phase === "awaiting_confirm" && !isBuilding && (
+        {showClarifying && (
+          <>
+            {isLoading && (
+              <div className="flex items-center gap-2 text-sm text-zinc-400">
+                <div className="h-4 w-4 motion-safe:animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                Generating your plan...
+              </div>
+            )}
+            <ClarifyingQuestions
+              questions={clarifyingQuestions!}
+              answers={clarifications}
+              onAnswer={onClarificationAnswer!}
+              onComplete={onClarificationsSubmit}
+              disabled={confirmDisabled || isLoading}
+              submitLabel={plan ? "Update Plan" : "Continue to Build"}
+            />
+          </>
+        )}
+
+        {planMarkdown && phase === "awaiting_confirm" && !isBuilding && !showVisualPlan && (
           <PlanDocument markdown={planMarkdown} />
         )}
 
-        {!planMarkdown && introText && (
+        {!showVisualPlan && !planMarkdown && introText && planPhase !== "clarifying" && (
           <IntroMessage text={introText} animate={phase !== "complete"} />
         )}
 
+        {displayPlan && showVisualPlan && !isBuilding && planPhase !== "clarifying" && (
+          <PlanCard
+            plan={displayPlan}
+            visualPlan={visualPlan ?? undefined}
+            variant="visual"
+            showActions={showPlanActions}
+            onConfirm={onConfirm}
+            onMakeChanges={onMakeChanges}
+            confirmDisabled={confirmDisabled}
+            clarificationsComplete={planPhase === "ready"}
+          />
+        )}
+
         {displayPlan &&
+          !showVisualPlan &&
           !planMarkdown &&
+          planPhase !== "clarifying" &&
           (phase === "awaiting_confirm" ||
             phase === "planning" ||
             isBuilding ||
@@ -167,7 +238,7 @@ export default function PlanView({
               variant={
                 phase === "complete" ? "complete" : isBuilding ? "building" : "plan"
               }
-              showActions={showConfirm && !!plan && phase === "awaiting_confirm"}
+              showActions={showPlanActions}
               onConfirm={onConfirm}
               onMakeChanges={onMakeChanges}
               confirmDisabled={confirmDisabled}
@@ -177,8 +248,9 @@ export default function PlanView({
         {displayPlan && planMarkdown && isBuilding && (
           <PlanCard
             plan={displayPlan}
+            visualPlan={visualPlan ?? undefined}
             liveFiles={mergedFiles}
-            variant="building"
+            variant={visualPlan ? "visual" : "building"}
             onConfirm={onConfirm}
             onMakeChanges={onMakeChanges}
             confirmDisabled={confirmDisabled}

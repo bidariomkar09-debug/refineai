@@ -4,13 +4,17 @@ import { useEffect, useRef } from "react";
 import type {
   BuildPhase,
   ChatMessage,
+  ClarifyingQuestion,
   DebugProposal,
   FileRoundEvent,
+  ProjectClarifications,
   ProjectPlan,
+  VisualPlanArtifacts,
 } from "@/app/lib/agentTypes";
 import type { ExplorerFile } from "@/app/lib/mergeProjectFiles";
 import MessageBubble from "./MessageBubble";
 import ModeBadge from "./ModeBadge";
+import ClarifyingQuestions from "./ClarifyingQuestions";
 import PlanModeActions from "./PlanModeActions";
 import PlanQuestionOptions from "./PlanQuestionOptions";
 import PlanChatCard from "./PlanChatCard";
@@ -23,12 +27,15 @@ type ChatMessagesProps = {
   onPlanApprove?: () => void;
   onPlanModify?: () => void;
   onPlanAnswer?: (answer: string) => void;
+  onClarificationAnswer?: (questionId: string, value: string) => void;
+  onClarificationsSubmit?: () => void;
+  clarifyingQuestions?: ClarifyingQuestion[];
+  clarifications?: ProjectClarifications;
+  planPhase?: "idle" | "clarifying" | "ready";
   onDebugApply?: (proposal: DebugProposal, messageId: string) => void;
   appliedDebugMessageIds?: Set<string>;
   actionsDisabled?: boolean;
-  /** Hide Build/Edit plan when a paused build must be resumed */
   hidePlanActions?: boolean;
-  /** Live build state for the latest plan card */
   livePlan?: ProjectPlan | null;
   liveFiles?: ExplorerFile[];
   phase?: BuildPhase;
@@ -39,6 +46,27 @@ type ChatMessagesProps = {
   onSkip?: () => void;
 };
 
+function VisualPlanSummary({ visual }: { visual: VisualPlanArtifacts }) {
+  return (
+    <div
+      className="mt-2 rounded-xl border border-indigo-500/25 bg-[#12121a] px-3 py-3"
+      data-testid="visual-plan-summary"
+    >
+      <p className="text-xs font-medium text-white">{visual.headline}</p>
+      <p className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-zinc-400">
+        {visual.plainEnglish}
+      </p>
+      <ul className="mt-2 space-y-0.5">
+        {visual.outcomeBullets.slice(0, 3).map((bullet) => (
+          <li key={bullet} className="text-[10px] text-indigo-300">
+            • {bullet}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function ChatMessages({
   messages,
   compact = false,
@@ -46,6 +74,11 @@ export default function ChatMessages({
   onPlanApprove,
   onPlanModify,
   onPlanAnswer,
+  onClarificationAnswer,
+  onClarificationsSubmit,
+  clarifyingQuestions,
+  clarifications = {},
+  planPhase,
   onDebugApply,
   appliedDebugMessageIds,
   actionsDisabled,
@@ -68,6 +101,10 @@ export default function ChatMessages({
   const lastPlanMessageId = [...messages]
     .reverse()
     .find((m) => m.role === "assistant" && m.metadata?.plan)?.id;
+
+  const activeClarifyingMessageId = [...messages]
+    .reverse()
+    .find((m) => m.metadata?.clarifyingQuestions && !m.metadata?.clarificationsComplete)?.id;
 
   function isActivePlanQuestion(index: number): boolean {
     const msg = messages[index];
@@ -95,6 +132,7 @@ export default function ChatMessages({
       {messages.map((msg, index) => {
         const isProgress = msg.type === "progress";
         const plan = (msg.metadata?.plan as ProjectPlan | undefined) ?? undefined;
+        const visual = msg.metadata?.visualPlan as VisualPlanArtifacts | undefined;
         const isLiveCard =
           Boolean(plan) &&
           msg.id === lastPlanMessageId &&
@@ -102,6 +140,15 @@ export default function ChatMessages({
 
         const hideStalePlanCard =
           mobile && (phase === "building" || phase === "testing") && !isLiveCard;
+
+        const showInlineClarifying =
+          msg.id === activeClarifyingMessageId &&
+          planPhase === "clarifying" &&
+          clarifyingQuestions &&
+          clarifyingQuestions.length > 0 &&
+          onClarificationAnswer;
+
+        const clarificationsComplete = msg.metadata?.clarificationsComplete === true;
 
         return (
           <MessageBubble
@@ -117,6 +164,15 @@ export default function ChatMessages({
               ) : undefined
             }
           >
+            {showInlineClarifying && (
+              <ClarifyingQuestions
+                questions={clarifyingQuestions}
+                answers={clarifications}
+                onAnswer={onClarificationAnswer}
+                onComplete={onClarificationsSubmit}
+                disabled={actionsDisabled}
+              />
+            )}
             {msg.metadata?.planQuestionOptions &&
               isActivePlanQuestion(index) &&
               onPlanAnswer && (
@@ -126,7 +182,10 @@ export default function ChatMessages({
                   disabled={actionsDisabled}
                 />
               )}
-            {plan && msg.role === "assistant" && !hideStalePlanCard && (
+            {visual && msg.role === "assistant" && !hideStalePlanCard && (
+              <VisualPlanSummary visual={visual} />
+            )}
+            {plan && msg.role === "assistant" && !hideStalePlanCard && !visual && (
               <PlanChatCard
                 plan={isLiveCard && livePlan ? livePlan : plan}
                 compact={compact && !mobile}
@@ -148,7 +207,7 @@ export default function ChatMessages({
               <PlanModeActions
                 onApprove={onPlanApprove}
                 onModify={onPlanModify}
-                disabled={actionsDisabled}
+                disabled={actionsDisabled || !clarificationsComplete}
               />
             )}
             {msg.metadata?.showDebugActions &&
@@ -165,7 +224,6 @@ export default function ChatMessages({
         );
       })}
 
-      {/* Agent-mode builds: show live plan card when no plan message in thread */}
       {livePlan &&
         !lastPlanMessageId &&
         (phase === "building" ||

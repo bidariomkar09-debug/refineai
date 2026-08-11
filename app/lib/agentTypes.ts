@@ -20,6 +20,42 @@ export type PlanStep = {
   relatedPaths?: string[];
 };
 
+export type ClarifyingQuestion = {
+  id: string;
+  question: string;
+  options: string[];
+  default: string;
+};
+
+export type ProjectClarifications = Record<string, string>;
+
+export type VisualPlanArtifacts = {
+  headline: string;
+  outcomeBullets: string[];
+  deliverables: string[];
+  buildSteps: string[];
+  plainEnglish: string;
+  flowchart: string;
+  clarifications: ProjectClarifications;
+};
+
+export type DbProjectPlan = {
+  id: string;
+  project_id: string;
+  target: string;
+  plan_text: string | null;
+  flowchart: string | null;
+  plain_english: string | null;
+  build_preview: VisualPlanArtifacts | Record<string, unknown>;
+  questions: ClarifyingQuestion[];
+  clarifications: ProjectClarifications;
+  status: "draft" | "clarifying" | "ready" | "building" | "built";
+  created_at: string;
+  updated_at: string;
+};
+
+export type ClarificationAnswer = { id: string; value: string };
+
 export type ProjectPlan = {
   name: string;
   description: string;
@@ -104,6 +140,9 @@ export type ChatMessage = {
     plan?: ProjectPlan;
     planMarkdown?: string;
     planQuestionOptions?: string[];
+    clarifyingQuestions?: ClarifyingQuestion[];
+    visualPlan?: VisualPlanArtifacts;
+    clarificationsComplete?: boolean;
     debugProposal?: DebugProposal;
     showPlanActions?: boolean;
     showDebugActions?: boolean;
@@ -205,8 +244,18 @@ export type SSEEvent =
   | { type: "message"; content: string; mode?: ChatMode }
   | { type: "plan_question"; content: string; options: string[]; projectId: string }
   | {
+      type: "plan_clarifying";
+      questions: ClarifyingQuestion[];
+      clarifications?: ProjectClarifications;
+      projectId: string;
+    }
+  | {
       type: "plan_ready";
-      data: { plan: ProjectPlan; markdown: string };
+      data: {
+        plan: ProjectPlan;
+        markdown: string;
+        visual: VisualPlanArtifacts;
+      };
       projectId: string;
     }
   | { type: "debug"; data: DebugProposal; content: string; projectId: string };

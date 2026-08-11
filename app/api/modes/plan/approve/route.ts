@@ -3,8 +3,10 @@ import {
   createProjectFiles,
   getProject,
   getProjectFiles,
+  getProjectPlan,
 } from "@/app/lib/db";
 import type { ProjectPlan } from "@/app/lib/agentTypes";
+import { areClarificationsComplete } from "@/app/lib/visualPlanEngine";
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,6 +19,20 @@ export async function POST(request: NextRequest) {
     const project = await getProject(projectId);
     if (!project) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const projectPlan = await getProjectPlan(projectId);
+    if (projectPlan?.questions?.length) {
+      const complete = areClarificationsComplete(
+        projectPlan.questions,
+        projectPlan.clarifications ?? {}
+      );
+      if (!complete || projectPlan.status !== "ready") {
+        return NextResponse.json(
+          { error: "Complete all clarifying questions before building" },
+          { status: 400 }
+        );
+      }
     }
 
     const plan = project.plan as ProjectPlan;

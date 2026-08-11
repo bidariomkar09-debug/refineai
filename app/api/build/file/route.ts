@@ -10,6 +10,7 @@ import {
   getMessages,
   getProject,
   getProjectFiles,
+  getProjectPlan,
   saveFileRound,
   saveTrainingData,
   updateBuildCheckpoint,
@@ -31,6 +32,7 @@ import {
   FILE_SCORE_THRESHOLD,
   type ProjectPlan,
 } from "@/app/lib/agentTypes";
+import { formatClarificationsForPrompt } from "@/app/lib/visualPlanEngine";
 
 function buildTrainingTarget(
   userIdea: string,
@@ -81,6 +83,12 @@ export async function POST(request: NextRequest) {
     const messages = await getMessages(projectId);
     const userIdea =
       messages.find((m) => m.role === "user")?.content ?? project.description;
+    const projectPlanRecord = await getProjectPlan(projectId);
+    const clarificationBlock =
+      projectPlanRecord?.clarifications &&
+      Object.keys(projectPlanRecord.clarifications).length > 0
+        ? `\n\n${formatClarificationsForPrompt(projectPlanRecord.clarifications)}`
+        : "";
     const projectContext = [
       `Project: ${plan.name}`,
       `Description: ${plan.description}`,
@@ -88,7 +96,10 @@ export async function POST(request: NextRequest) {
       "",
       "Original user requirements (follow ALL details exactly — copy, links, sections, colors, layout):",
       userIdea,
-    ].join("\n");
+      clarificationBlock,
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     const filePurpose = plannedFile?.purpose ?? file.file_name;
     const target = buildTrainingTarget(userIdea, file.file_path, filePurpose);
