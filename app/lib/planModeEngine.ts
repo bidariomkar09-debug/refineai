@@ -9,7 +9,7 @@ import { PLAN_MODE_SYSTEM_PROMPT } from "./chatModes";
 import { generateJSON, generateText } from "./agentAI";
 import { detectNiche, getStackForNiche } from "./techStacks";
 import { estimateBuildMinutes, linkPlanStepsToFiles, normalizeApiRoutes } from "./planPresentation";
-import { getMessages, getProjectPlan, upsertProjectPlan } from "./db";
+import { getMessages, getProject, getProjectPlan, updateProjectPlan, upsertProjectPlan } from "./db";
 import {
   areClarificationsComplete,
   buildVisualPlanArtifacts,
@@ -27,6 +27,15 @@ export type PlanModeResult =
       target: string;
     }
   | { type: "plan"; markdown: string; plan: ProjectPlan; visual: VisualPlanArtifacts };
+
+type VisualState = {
+  questions: ClarifyingQuestion[];
+  clarifications: ProjectClarifications;
+  status: NonNullable<ProjectPlan["planPhase"]>;
+  visual?: VisualPlanArtifacts;
+  target: string;
+  basePlan: ProjectPlan;
+};
 
 const PLAN_JSON_SYSTEM = `You are a senior software architect. Create a complete project plan.
 Return JSON:
@@ -71,6 +80,90 @@ async function resolveTarget(projectId: string, message: string): Promise<string
   return firstUser?.content?.trim() || message.trim();
 }
 
+/** Prefer project_plans table; fall back to fields embedded in projects.plan JSONB. */
+async function loadVisualState(projectId: string, target: string): Promise<VisualState> {
+  const [row, project] = await Promise.all([getProjectPlan(projectId), getProject(projectId)]);
+  const embedded = (project?.plan as ProjectPlan | undefined) ?? {
+    name: target.slice(0, 60) || "New Project",
+    description: target,
+    niche: "general",
+    techStack: getStackForNiche("general"),
+    files: [],
+    apiRoutes: [],
+    estimatedFiles: 0,
+  };
+
+  const questions =
+    (row?.questions?.length ? row.questions : embedded.clarifyingQuestions) ?? [];
+  const clarifications =
+    row?.clarifications && Object.keys(row.clarifications).length > 0
+      ? row.clarifications
+      : embedded.clarifications ?? {};
+  const status =
+    row?.status ??
+    embedded.planPhase ??
+    (questions.length ? "clarifying" : "draft");
+  const visual =
+    (row?.build_preview &&
+    typeof row.build_preview === "object" &&
+    "flowchart" in row.build_preview
+      ? (row.build_preview as VisualPlanArtifacts)
+      : undefined) ?? embedded.visual;
+
+  return {
+    questions: questions as ClarifyingQuestion[],
+    clarifications,
+    status,
+    visual,
+    target: row?.target || target,
+    basePlan: embedded,
+  };
+}
+
+async function saveVisualState(params: {
+  projectId: string;
+  target: string;
+  questions: ClarifyingQuestion[];
+  clarifications: ProjectClarifications;
+  status: NonNullable<ProjectPlan["planPhase"]>;
+  plan?: ProjectPlan;
+  markdown?: string;
+  visual?: VisualPlanArtifacts;
+}): Promise<ProjectPlan> {
+  await upsertProjectPlan({
+    projectId: params.projectId,
+    target: params.target,
+    questions: params.questions,
+    clarifications: params.clarifications,
+    status: params.status,
+    planText: params.markdown,
+    flowchart: params.visual?.flowchart,
+    plainEnglish: params.visual?.plainEnglish,
+    buildPreview: params.visual,
+  });
+
+  const project = await getProject(params.projectId);
+  const base = params.plan ?? (project?.plan as ProjectPlan) ?? {
+    name: params.target.slice(0, 60) || "New Project",
+    description: params.target,
+    niche: detectNiche(params.target),
+    techStack: getStackForNiche(detectNiche(params.target)),
+    files: [],
+    apiRoutes: [],
+    estimatedFiles: 0,
+  };
+
+  const nextPlan: ProjectPlan = {
+    ...base,
+    clarifyingQuestions: params.questions,
+    clarifications: params.clarifications,
+    planPhase: params.status,
+    visual: params.visual ?? base.visual,
+  };
+  await updateProjectPlan(params.projectId, nextPlan);
+  return nextPlan;
+}
+
 async function generateTechnicalPlan(params: {
   projectId: string;
   message: string;
@@ -91,9 +184,10 @@ async function generateTechnicalPlan(params: {
     ? `${PLAN_JSON_SYSTEM}\n\nUpdate the existing plan based on user feedback and clarifications.`
     : PLAN_JSON_SYSTEM;
 
-  const userPrompt = params.revise && params.currentPlan
-    ? `Current plan:\n${JSON.stringify(params.currentPlan, null, 2)}\n\n${clarificationBlock}\n\nUser feedback:\n${params.message}`
-    : `Conversation:\n${allHistory}\n\nLatest user input:\n${params.message}\n\nProject target: ${params.target}\n\n${clarificationBlock}\n\nNiche hint: ${niche}`;
+  const userPrompt =
+    params.revise && params.currentPlan
+      ? `Current plan:\n${JSON.stringify(params.currentPlan, null, 2)}\n\n${clarificationBlock}\n\nUser feedback:\n${params.message}`
+      : `Conversation:\n${allHistory}\n\nLatest user input:\n${params.message}\n\nProject target: ${params.target}\n\n${clarificationBlock}\n\nNiche hint: ${niche}`;
 
   const { data } = await generateJSON<
     ProjectPlan & { markdown?: string; risks?: string[]; complexity?: string }
@@ -124,19 +218,22 @@ export async function runPlanModeStep(params: {
 }): Promise<PlanModeResult> {
   const target = await resolveTarget(params.projectId, params.message);
   const niche = detectNiche(target);
-  let projectPlan = await getProjectPlan(params.projectId);
+  const state = await loadVisualState(params.projectId, target);
 
   if (params.submitClarifications && params.clarificationAnswers?.length) {
     const questions =
-      (projectPlan?.questions as ClarifyingQuestion[]) ??
-      generateClarifyingQuestions(target, niche);
+      state.questions.length > 0
+        ? state.questions
+        : generateClarifyingQuestions(target, niche);
     const clarifications = mergeClarificationAnswers(
-      (projectPlan?.clarifications as ProjectClarifications) ?? getDefaultClarifications(questions),
+      Object.keys(state.clarifications).length
+        ? state.clarifications
+        : getDefaultClarifications(questions),
       params.clarificationAnswers
     );
 
     if (!areClarificationsComplete(questions, clarifications)) {
-      await upsertProjectPlan({
+      await saveVisualState({
         projectId: params.projectId,
         target,
         questions,
@@ -151,28 +248,33 @@ export async function runPlanModeStep(params: {
       message: params.message,
       target,
       clarifications,
+      currentPlan: state.basePlan.files?.length ? state.basePlan : undefined,
     });
     const visual = await buildVisualPlanArtifacts(plan, clarifications, target);
-
-    await upsertProjectPlan({
+    const saved = await saveVisualState({
       projectId: params.projectId,
       target,
       questions,
       clarifications,
       status: "ready",
-      planText: markdown,
-      flowchart: visual.flowchart,
-      plainEnglish: visual.plainEnglish,
-      buildPreview: visual,
+      plan: {
+        ...plan,
+        clarifications,
+        visual,
+        clarifyingQuestions: questions,
+        planPhase: "ready",
+      },
+      markdown,
+      visual,
     });
 
-    return { type: "plan", markdown, plan, visual };
+    return { type: "plan", markdown, plan: saved, visual };
   }
 
-  if (!projectPlan || projectPlan.status === "draft" || !projectPlan.questions?.length) {
+  if (state.status === "draft" || state.questions.length === 0) {
     const questions = generateClarifyingQuestions(target, niche);
     const clarifications = getDefaultClarifications(questions);
-    await upsertProjectPlan({
+    await saveVisualState({
       projectId: params.projectId,
       target,
       questions,
@@ -182,29 +284,43 @@ export async function runPlanModeStep(params: {
     return { type: "clarifying", questions, clarifications, target };
   }
 
-  if (projectPlan.status === "clarifying") {
-    const questions = projectPlan.questions as ClarifyingQuestion[];
-    const clarifications =
-      (projectPlan.clarifications as ProjectClarifications) ??
-      getDefaultClarifications(questions);
-    return { type: "clarifying", questions, clarifications, target };
+  if (state.status === "clarifying") {
+    return {
+      type: "clarifying",
+      questions: state.questions,
+      clarifications: state.clarifications,
+      target,
+    };
   }
 
-  if (projectPlan.status === "ready" && projectPlan.build_preview) {
-    const clarifications = projectPlan.clarifications as ProjectClarifications;
+  if (state.status === "ready") {
+    const clarifications = state.clarifications;
     const { plan, markdown } = await generateTechnicalPlan({
       projectId: params.projectId,
       message: params.message,
       target,
       clarifications,
+      currentPlan: state.basePlan.files?.length ? state.basePlan : undefined,
     });
     const visual = await buildVisualPlanArtifacts(plan, clarifications, target);
-    return { type: "plan", markdown, plan, visual };
+    const saved = await saveVisualState({
+      projectId: params.projectId,
+      target,
+      questions: state.questions.length
+        ? state.questions
+        : generateClarifyingQuestions(target, niche),
+      clarifications,
+      status: "ready",
+      plan: { ...plan, clarifications, visual, planPhase: "ready" },
+      markdown,
+      visual,
+    });
+    return { type: "plan", markdown, plan: saved, visual };
   }
 
   const questions = generateClarifyingQuestions(target, niche);
   const clarifications = getDefaultClarifications(questions);
-  await upsertProjectPlan({
+  await saveVisualState({
     projectId: params.projectId,
     target,
     questions,
@@ -222,26 +338,30 @@ export async function revisePlanMode(params: {
   submitClarifications?: boolean;
 }): Promise<PlanModeResult> {
   const target = await resolveTarget(params.projectId, params.message);
-  const projectPlan = await getProjectPlan(params.projectId);
+  const niche = detectNiche(target);
+  const state = await loadVisualState(params.projectId, target);
   const questions =
-    (projectPlan?.questions as ClarifyingQuestion[]) ??
-    generateClarifyingQuestions(target, detectNiche(target));
+    state.questions.length > 0
+      ? state.questions
+      : generateClarifyingQuestions(target, niche);
 
   let clarifications =
-    (projectPlan?.clarifications as ProjectClarifications) ??
-    getDefaultClarifications(questions);
+    Object.keys(state.clarifications).length > 0
+      ? state.clarifications
+      : getDefaultClarifications(questions);
 
   if (params.clarificationAnswers?.length) {
     clarifications = mergeClarificationAnswers(clarifications, params.clarificationAnswers);
   }
 
   if (params.submitClarifications && !areClarificationsComplete(questions, clarifications)) {
-    await upsertProjectPlan({
+    await saveVisualState({
       projectId: params.projectId,
       target,
       questions,
       clarifications,
       status: "clarifying",
+      plan: params.currentPlan,
     });
     return { type: "clarifying", questions, clarifications, target };
   }
@@ -255,18 +375,22 @@ export async function revisePlanMode(params: {
     revise: true,
   });
   const visual = await buildVisualPlanArtifacts(plan, clarifications, target);
-
-  await upsertProjectPlan({
+  const saved = await saveVisualState({
     projectId: params.projectId,
     target,
     questions,
     clarifications,
     status: "ready",
-    planText: markdown,
-    flowchart: visual.flowchart,
-    plainEnglish: visual.plainEnglish,
-    buildPreview: visual,
+    plan: {
+      ...plan,
+      clarifications,
+      visual,
+      clarifyingQuestions: questions,
+      planPhase: "ready",
+    },
+    markdown,
+    visual,
   });
 
-  return { type: "plan", markdown, plan, visual };
+  return { type: "plan", markdown, plan: saved, visual };
 }

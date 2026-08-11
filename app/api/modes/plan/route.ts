@@ -80,6 +80,29 @@ export async function POST(request: NextRequest) {
             });
 
       if (result.type === "clarifying") {
+        const project = await getProject(projectId!);
+        const current = (project?.plan as ProjectPlan | undefined) ?? {
+          name: result.target.slice(0, 60) || "New Project",
+          description: result.target,
+          niche: "general",
+          techStack: {
+            frontend: "Next.js",
+            backend: "Next.js API",
+            database: "Supabase",
+            ai: "OpenAI",
+            styling: "Tailwind CSS",
+            deploy: "Vercel",
+          },
+          files: [],
+          apiRoutes: [],
+          estimatedFiles: 0,
+        };
+        await updateProjectPlan(projectId!, {
+          ...current,
+          clarifyingQuestions: result.questions,
+          clarifications: result.clarifications,
+          planPhase: "clarifying",
+        });
         await addMessage(
           projectId!,
           "assistant",

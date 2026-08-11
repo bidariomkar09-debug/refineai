@@ -21,13 +21,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    const plan = project.plan as ProjectPlan;
     const projectPlan = await getProjectPlan(projectId);
-    if (projectPlan?.questions?.length) {
-      const complete = areClarificationsComplete(
-        projectPlan.questions,
-        projectPlan.clarifications ?? {}
-      );
-      if (!complete || projectPlan.status !== "ready") {
+    const questions =
+      (projectPlan?.questions?.length
+        ? projectPlan.questions
+        : plan.clarifyingQuestions) ?? [];
+    const clarifications =
+      projectPlan?.clarifications && Object.keys(projectPlan.clarifications).length > 0
+        ? projectPlan.clarifications
+        : plan.clarifications ?? {};
+    const status = projectPlan?.status ?? plan.planPhase;
+
+    if (questions.length > 0) {
+      const complete = areClarificationsComplete(questions, clarifications);
+      if (!complete || status !== "ready") {
         return NextResponse.json(
           { error: "Complete all clarifying questions before building" },
           { status: 400 }
@@ -35,7 +43,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const plan = project.plan as ProjectPlan;
     const files = await getProjectFiles(projectId);
     const codeFiles = files.filter((f) => f.file_path !== "PLAN.md");
 

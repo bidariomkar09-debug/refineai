@@ -84,10 +84,14 @@ export async function POST(request: NextRequest) {
     const userIdea =
       messages.find((m) => m.role === "user")?.content ?? project.description;
     const projectPlanRecord = await getProjectPlan(projectId);
-    const clarificationBlock =
+    const clarifications =
       projectPlanRecord?.clarifications &&
       Object.keys(projectPlanRecord.clarifications).length > 0
-        ? `\n\n${formatClarificationsForPrompt(projectPlanRecord.clarifications)}`
+        ? projectPlanRecord.clarifications
+        : plan.clarifications;
+    const clarificationBlock =
+      clarifications && Object.keys(clarifications).length > 0
+        ? `\n\n${formatClarificationsForPrompt(clarifications)}`
         : "";
     const projectContext = [
       `Project: ${plan.name}`,

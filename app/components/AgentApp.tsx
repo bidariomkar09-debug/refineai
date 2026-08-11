@@ -206,11 +206,8 @@ export default function AgentApp({
     if (showResumeBuild || buildStarting) return false;
     if (chatMode === "agent" && showConfirm) return true;
     if (chatMode === "plan") {
-      const hasActions = messages.some((m) => m.metadata?.showPlanActions);
-      const clarificationsDone =
-        planPhase === "ready" ||
-        messages.some((m) => m.metadata?.clarificationsComplete);
-      return hasActions && clarificationsDone;
+      if (planPhase !== "ready") return false;
+      return messages.some((m) => m.metadata?.showPlanActions);
     }
     return false;
   }, [
@@ -680,19 +677,25 @@ export default function AgentApp({
       const clarifyingMsg = [...loadedMessages]
         .reverse()
         .find((m) => m.metadata?.clarifyingQuestions);
-      if (clarifyingMsg?.metadata?.clarifyingQuestions) {
-        setClarifyingQuestions(
-          clarifyingMsg.metadata.clarifyingQuestions as ClarifyingQuestion[]
-        );
+      const embeddedVisual = loadedPlan?.visual as VisualPlanArtifacts | undefined;
+      const embeddedQuestions =
+        (clarifyingMsg?.metadata?.clarifyingQuestions as ClarifyingQuestion[] | undefined) ??
+        loadedPlan?.clarifyingQuestions;
+      if (embeddedQuestions?.length) {
+        setClarifyingQuestions(embeddedQuestions);
       }
-      if (visualMsg?.metadata?.visualPlan) {
-        setVisualPlan(visualMsg.metadata.visualPlan as VisualPlanArtifacts);
-        setPlanPhase("ready");
-        const vp = visualMsg.metadata.visualPlan as VisualPlanArtifacts;
-        setClarifications(vp.clarifications);
-        clarificationsRef.current = vp.clarifications;
-      } else if (clarifyingMsg?.metadata?.clarifyingQuestions) {
+      if (visualMsg?.metadata?.visualPlan || embeddedVisual) {
+        const vp = (visualMsg?.metadata?.visualPlan as VisualPlanArtifacts) ?? embeddedVisual!;
+        setVisualPlan(vp);
+        setPlanPhase(loadedPlan?.planPhase === "clarifying" ? "clarifying" : "ready");
+        setClarifications(vp.clarifications ?? loadedPlan?.clarifications ?? {});
+        clarificationsRef.current = vp.clarifications ?? loadedPlan?.clarifications ?? {};
+      } else if (embeddedQuestions?.length || loadedPlan?.planPhase === "clarifying") {
         setPlanPhase("clarifying");
+        if (loadedPlan?.clarifications) {
+          setClarifications(loadedPlan.clarifications);
+          clarificationsRef.current = loadedPlan.clarifications;
+        }
       } else {
         setVisualPlan(null);
         setPlanPhase("idle");
@@ -1203,6 +1206,7 @@ export default function AgentApp({
   const handlePlanModify = useCallback(() => {
     setAwaitingPlanChanges(true);
     setPlanPhase("clarifying");
+    setPhase("planning");
     if (visualPlan?.clarifications) {
       setClarifications(visualPlan.clarifications);
       clarificationsRef.current = visualPlan.clarifications;
@@ -1211,6 +1215,20 @@ export default function AgentApp({
       const target = originalPrompt || plan?.description || "Project";
       setClarifyingQuestions(generateClarifyingQuestions(target, plan?.niche));
     }
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.metadata?.showPlanActions || m.metadata?.clarificationsComplete
+          ? {
+              ...m,
+              metadata: {
+                ...m.metadata,
+                showPlanActions: false,
+                clarificationsComplete: false,
+              },
+            }
+          : m
+      )
+    );
     setCenterTab("plan");
   }, [visualPlan, clarifyingQuestions.length, originalPrompt, plan]);
 

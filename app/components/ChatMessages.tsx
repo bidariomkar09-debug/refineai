@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   BuildPhase,
   ChatMessage,
@@ -47,6 +47,8 @@ type ChatMessagesProps = {
 };
 
 function VisualPlanSummary({ visual }: { visual: VisualPlanArtifacts }) {
+  const [flowchartOpen, setFlowchartOpen] = useState(false);
+
   return (
     <div
       className="mt-2 rounded-xl border border-indigo-500/25 bg-[#12121a] px-3 py-3"
@@ -63,6 +65,27 @@ function VisualPlanSummary({ visual }: { visual: VisualPlanArtifacts }) {
           </li>
         ))}
       </ul>
+      {visual.flowchart && (
+        <div className="mt-2 border-t border-white/5 pt-2">
+          <button
+            type="button"
+            onClick={() => setFlowchartOpen((v) => !v)}
+            className="flex w-full items-center justify-between text-[10px] font-medium text-indigo-300"
+            data-testid="visual-plan-flowchart-toggle"
+          >
+            How it&apos;s structured
+            <span>{flowchartOpen ? "▾" : "▸"}</span>
+          </button>
+          {flowchartOpen && (
+            <pre
+              className="mt-2 overflow-x-auto whitespace-pre font-mono text-[10px] leading-relaxed text-indigo-400"
+              data-testid="visual-plan-flowchart"
+            >
+              {visual.flowchart}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -142,13 +165,15 @@ export default function ChatMessages({
           mobile && (phase === "building" || phase === "testing") && !isLiveCard;
 
         const showInlineClarifying =
+          mobile &&
           msg.id === activeClarifyingMessageId &&
           planPhase === "clarifying" &&
           clarifyingQuestions &&
           clarifyingQuestions.length > 0 &&
           onClarificationAnswer;
 
-        const clarificationsComplete = msg.metadata?.clarificationsComplete === true;
+        const clarificationsComplete =
+          planPhase === "ready" && msg.metadata?.clarificationsComplete === true;
 
         return (
           <MessageBubble

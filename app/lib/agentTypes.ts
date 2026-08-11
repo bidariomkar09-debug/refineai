@@ -71,6 +71,11 @@ export type ProjectPlan = {
   revisionMessage?: string;
   estimatedMinutes?: number;
   steps?: PlanStep[];
+  /** Visual plan prefs — also stored in project_plans when that table exists */
+  clarifications?: ProjectClarifications;
+  clarifyingQuestions?: ClarifyingQuestion[];
+  visual?: VisualPlanArtifacts;
+  planPhase?: "draft" | "clarifying" | "ready" | "building" | "built";
 };
 
 export type FileStatus =
